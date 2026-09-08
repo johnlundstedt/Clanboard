@@ -1,0 +1,16 @@
+node_modules/
+.env
+
+# Build artifacts
+client/dist/
+server/public/
+
+# Runtime data (SQLite databases + uploaded photos)
+data/
+data/*.db
+data/*.db-shm
+data/*.db-wal
+data/uploads/
+
+# OS junk
+.DS_Store
