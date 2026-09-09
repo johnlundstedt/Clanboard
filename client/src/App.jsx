@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
+import { User, Lock, LogOut } from "lucide-react";
 import modules, { getClientModule } from "./modules/index.js";
 import { getMe, login, logout } from "./api.js";
 import { ensureRealtime } from "./realtime.js";
 import KioskShell from "./KioskShell.jsx";
+import Logo from "./components/Logo.jsx";
+import Avatar from "./components/Avatar.jsx";
 
 export default function App() {
   const [user, setUser] = useState(null);
@@ -17,11 +20,16 @@ export default function App() {
     function onModulesChanged() {
       loadSession();
     }
+    function onUserChanged() {
+      loadSession();
+    }
     window.addEventListener("fh:unauthorized", onUnauthorized);
     window.addEventListener("fh:modules-changed", onModulesChanged);
+    window.addEventListener("fh:user-changed", onUserChanged);
     return () => {
       window.removeEventListener("fh:unauthorized", onUnauthorized);
       window.removeEventListener("fh:modules-changed", onModulesChanged);
+      window.removeEventListener("fh:user-changed", onUserChanged);
     };
   }, []);
 
@@ -64,21 +72,28 @@ export default function App() {
   return (
     <div>
       <nav className="nav">
-        <span className="title">{user.family_name ? `${user.family_name} Clanboard` : "Clanboard"}</span>
-        {visible.map((m) => (
-          <button
-            key={m.name}
-            className={`navlink ${active === m.name ? "active" : ""}`}
-            onClick={() => setActive(m.name)}
-            title={m.navLabel}
-          >
-            {m.icon && <m.icon size={18} style={{ verticalAlign: "-3px", marginRight: 5 }} />}
-            {m.navLabel}
+        <span className="title" style={{ display: "inline-flex", alignItems: "center", gap: 10, fontWeight: 800, flex: 1 }}>
+          <Logo size={38} />
+          <span style={{ whiteSpace: "nowrap" }}><span className="clan">Clan</span><span className="board" style={{ marginLeft: "0.12em" }}>Board</span></span>
+        </span>
+        <div className="nav-modules">
+          {visible.map((m) => (
+            <button
+              key={m.name}
+              className={`navlink ${active === m.name ? "active" : ""}`}
+              onClick={() => setActive(m.name)}
+              title={m.navLabel}
+            >
+              {m.icon && <m.icon size={34} />}
+            </button>
+          ))}
+        </div>
+        <span className="nav-actions">
+          <Avatar user={user} className="nav-avatar" />
+          <button className="navlink" title="Log out" onClick={async () => { await logout(); setUser(null); }}>
+            <LogOut size={32} />
           </button>
-        ))}
-        <span className="spacer" />
-        <span className="muted small">{user.name}</span>
-        <button className="navlink" onClick={async () => { await logout(); setUser(null); }}>Log out</button>
+        </span>
       </nav>
 
       <main style={{ maxWidth: 1100, margin: "0 auto", padding: "1rem" }}>
@@ -114,13 +129,25 @@ function LoginScreen({ onLogin }) {
 
   return (
     <div className="login-wrap">
+      <div className="login-brand">
+        <Logo size={300} />
+        <h1><span className="clan">Clan</span> <span className="board">Board</span></h1>
+        <p className="login-tagline">Clan life, organized.</p>
+      </div>
       <form className="card login-card" onSubmit={submit}>
-        <h1 style={{ marginTop: 0 }}>Clanboard</h1>
+        <h2 style={{ margin: "1.25rem 0 0.4rem" }}>Welcome</h2>
+        <p className="small" style={{ margin: "0 0 1.5rem", color: "var(--muted)" }}>Sign in to your Clan Board account</p>
         <div style={{ display: "grid", gap: "0.6rem" }}>
-          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Name" autoFocus autoComplete="username" />
-          <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Password" autoComplete="current-password" />
+          <div className="field">
+            <User size={18} className="field-icon" />
+            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Name" autoFocus autoComplete="username" />
+          </div>
+          <div className="field">
+            <Lock size={18} className="field-icon" />
+            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Password" autoComplete="current-password" />
+          </div>
           {error && <p className="small" style={{ color: "var(--red)", margin: 0 }}>{error}</p>}
-          <button className="primary" type="submit" disabled={busy}>{busy ? "Signing in…" : "Sign in"}</button>
+          <button className="primary" type="submit" disabled={busy} style={{ marginBottom: "1.25rem" }}>{busy ? "Signing in…" : "Sign in"}</button>
         </div>
       </form>
     </div>

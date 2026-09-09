@@ -26,6 +26,7 @@ export function publicUser(u) {
     nav_scope: u.nav_scope,
     is_admin: !!u.is_admin,
     is_kiosk: !!u.is_kiosk,
+    hide_from_kiosk: !!u.hide_from_kiosk,
   };
 }
 

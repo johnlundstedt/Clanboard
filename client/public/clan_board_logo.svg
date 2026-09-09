@@ -1,0 +1,81 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="navy" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#173B68"/>
+      <stop offset="1" stop-color="#285B8F"/>
+    </linearGradient>
+    <linearGradient id="green" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#48B47A"/>
+      <stop offset="1" stop-color="#63C78E"/>
+    </linearGradient>
+    <linearGradient id="orange" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#F5A623"/>
+      <stop offset="1" stop-color="#FFB82E"/>
+    </linearGradient>
+    <linearGradient id="blue" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2992D6"/>
+      <stop offset="1" stop-color="#56AFE5"/>
+    </linearGradient>
+    <linearGradient id="purple" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#8061B8"/>
+      <stop offset="1" stop-color="#9A78D0"/>
+    </linearGradient>
+  </defs>
+
+  <!-- House / family board mark -->
+  <g transform="translate(42 24)">
+    <!-- roof -->
+    <path d="M32 165 L205 35 L378 165"
+          fill="none" stroke="url(#navy)" stroke-width="34"
+          stroke-linecap="round" stroke-linejoin="round"/>
+    <!-- chimney -->
+    <path d="M294 105 V61 H332 V133"
+          fill="none" stroke="url(#navy)" stroke-width="30"
+          stroke-linejoin="round"/>
+    <!-- house body -->
+    <path d="M63 157 V383 Q63 405 85 405 H325 Q347 405 347 383 V157"
+          fill="white" stroke="url(#navy)" stroke-width="30"
+          stroke-linejoin="round"/>
+
+    <!-- four dashboard tiles -->
+    <rect x="101" y="190" width="91" height="91" rx="17" fill="url(#green)"/>
+    <rect x="218" y="190" width="91" height="91" rx="17" fill="url(#orange)"/>
+    <rect x="101" y="301" width="91" height="91" rx="17" fill="url(#blue)"/>
+    <rect x="218" y="301" width="91" height="91" rx="17" fill="url(#purple)"/>
+
+    <!-- check -->
+    <path d="M123 235 L142 253 L172 216"
+          fill="none" stroke="white" stroke-width="13"
+          stroke-linecap="round" stroke-linejoin="round"/>
+
+    <!-- utensils -->
+    <g stroke="white" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" fill="none">
+      <path d="M241 213 V258"/>
+      <path d="M231 213 V230 M241 213 V230 M251 213 V230"/>
+      <path d="M231 230 Q241 242 251 230"/>
+      <path d="M279 213 V258"/>
+      <path d="M269 213 Q269 238 279 238 Q289 238 289 213"/>
+      <path d="M269 238 L264 258 M289 238 L294 258"/>
+    </g>
+
+    <!-- calendar -->
+    <rect x="117" y="321" width="59" height="57" rx="5"
+          fill="none" stroke="white" stroke-width="8"/>
+    <path d="M117 338 H176 M131 313 V328 M162 313 V328"
+          fill="none" stroke="white" stroke-width="8" stroke-linecap="round"/>
+    <path d="M131 350 H138 M147 350 H154 M163 350 H170 M131 365 H138 M147 365 H154 M163 365 H170"
+          fill="none" stroke="white" stroke-width="6" stroke-linecap="round"/>
+
+    <!-- checklist -->
+    <g fill="white">
+      <circle cx="235" cy="322" r="6"/>
+      <circle cx="235" cy="347" r="6"/>
+      <circle cx="235" cy="372" r="6"/>
+    </g>
+    <g stroke="white" stroke-width="7" stroke-linecap="round">
+      <path d="M251 322 H292"/>
+      <path d="M251 347 H292"/>
+      <path d="M251 372 H292"/>
+    </g>
+  </g>
+</svg>

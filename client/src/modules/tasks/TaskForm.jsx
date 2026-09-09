@@ -52,15 +52,16 @@ function initialInterval(initial) {
   return Number.isInteger(n) && n > 0 ? n : 1;
 }
 
-export default function TaskForm({ members, initial, onSubmit, onCancel, categories, priorities, settings }) {
+export default function TaskForm({ members, initial, defaultAssigneeIds, onSubmit, onCancel, categories, priorities, settings }) {
   const [name, setName] = useState(initial?.name || "");
   const [description, setDescription] = useState(initial?.description || "");
   const [categoryId, setCategoryId] = useState(initial?.category_id || "");
   const [priorityId, setPriorityId] = useState(initial?.priority_id || "");
   const [dollarValue, setDollarValue] = useState(initial?.dollar_value ?? "");
-  const [assignedIds, setAssignedIds] = useState(() =>
-    (initial?.assignees || []).map((a) => a.id)
-  );
+  const [assignedIds, setAssignedIds] = useState(() => {
+    if (initial?.assignees?.length) return initial.assignees.map((a) => a.id);
+    return defaultAssigneeIds || [];
+  });
   const [separateTasks, setSeparateTasks] = useState(false);
   const [requiresAdultReview, setRequiresAdultReview] = useState(!!initial?.requires_adult_review);
   const [icon, setIcon] = useState(initial?.icon || null);

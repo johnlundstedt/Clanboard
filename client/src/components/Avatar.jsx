@@ -7,7 +7,7 @@ export default function Avatar({ user, size, className = "" }) {
     .toUpperCase();
 
   if (user?.photo_url) {
-    return <img className={`avatar ${size} ${className}`.trim()} src={user.photo_url} alt={user.name} />;
+    return <img className={`avatar ${size} ${className}`.trim()} src={user.photo_url} alt={user.name} title={user.name} />;
   }
   return (
     <span className={`avatar ${size} ${className}`.trim()} title={user?.name}>

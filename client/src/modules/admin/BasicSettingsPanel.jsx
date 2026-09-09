@@ -68,7 +68,7 @@ export default function BasicSettingsPanel({ onSaved }) {
 
         <div className="row wrap" style={{ gap: "0.5rem" }}>
           <label className="grow" style={{ minWidth: 220 }}>
-            <span className="small muted" style={{ display: "block", marginBottom: "0.25rem" }}>Family name</span>
+            <span className="small muted" style={{ display: "block", marginBottom: "0.25rem" }}>Clan name</span>
             <input
               className="grow"
               value={familyName}

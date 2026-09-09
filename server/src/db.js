@@ -20,6 +20,7 @@ db.exec(`
     nav_scope TEXT NOT NULL DEFAULT 'all',  -- 'own' (just that member's dashboard/tasks) | 'all'
     is_admin INTEGER NOT NULL DEFAULT 0,
     is_kiosk INTEGER NOT NULL DEFAULT 0, -- wall-display account
+    hide_from_kiosk INTEGER NOT NULL DEFAULT 0, -- exclude from the wall-display sidebar
     password_hash TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
@@ -68,6 +69,9 @@ db.exec(`
 const userCols = db.prepare("PRAGMA table_info(users)").all().map((c) => c.name);
 if (!userCols.includes("is_kiosk")) {
   db.exec("ALTER TABLE users ADD COLUMN is_kiosk INTEGER NOT NULL DEFAULT 0");
+}
+if (!userCols.includes("hide_from_kiosk")) {
+  db.exec("ALTER TABLE users ADD COLUMN hide_from_kiosk INTEGER NOT NULL DEFAULT 0");
 }
 if (!userCols.includes("gender")) {
   db.exec("ALTER TABLE users ADD COLUMN gender TEXT");

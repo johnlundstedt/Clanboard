@@ -23,7 +23,7 @@ const FILTERS = [
   ["unassigned", "Unassigned"],
 ];
 
-export default function TasksPage({ user, memberId }) {
+export default function TasksPage({ user, memberId, member }) {
   const [tasks, setTasks] = useState([]);
   const [members, setMembers] = useState([]);
   const [showingForm, setShowingForm] = useState(false);
@@ -128,8 +128,9 @@ export default function TasksPage({ user, memberId }) {
   const canViewOthers = adult || user?.is_kiosk || !!caps.view_others;
 
   // Standalone members with view_others can flip between everyone and a single
-  // member's tasks. On the kiosk the memberId prop is already scoped server-side.
-  const showMemberFilter = !memberId && canViewOthers;
+  // member's tasks. On the kiosk the memberId prop is already scoped server-side
+  // and the left-hand sidebar is the member picker, so skip the extra avatar bar.
+  const showMemberFilter = user?.is_kiosk ? false : !memberId && canViewOthers;
   const counts = useMemo(() => {
     const c = {};
     for (const m of members) {
@@ -154,21 +155,31 @@ export default function TasksPage({ user, memberId }) {
     [members]
   );
 
+  // On the kiosk, the heading names whose tasks are shown (sidebar selection);
+  // for a logged-in user it stays the generic module title.
+  const title = user?.is_kiosk
+    ? memberId
+      ? `${member?.name || "Member"}’s Tasks`
+      : `${user.family_name || "Clanboard"} Clan’s Tasks`
+    : "Tasks";
+
   return (
     <div>
       <div className="row wrap" style={{ justifyContent: "space-between", marginBottom: "1rem" }}>
-        <h1 style={{ margin: 0 }}>Tasks</h1>
+        <h1 style={{ margin: 0 }}>{title}</h1>
         {canCreate && <button className="primary" onClick={openNew}>+ New task</button>}
       </div>
 
       {(showingForm || editing) && (
         <div className="card" style={{ marginBottom: "1rem" }}>
           <TaskForm
+            key={editing?.id ?? "new"}
             members={members}
             categories={categories}
             priorities={priorities}
             settings={settings}
             initial={editing}
+            defaultAssigneeIds={memberFilter ? [memberFilter] : []}
             onSubmit={handleSubmit}
             onCancel={cancelForm}
           />

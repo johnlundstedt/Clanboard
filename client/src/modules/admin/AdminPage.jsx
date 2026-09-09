@@ -11,7 +11,7 @@ const SECTIONS = [
     key: "basic",
     label: "Basic Settings",
     icon: SlidersHorizontal,
-    desc: "Family name, weather units, module toggles, and weather location.",
+    desc: "Clan name, weather units, module toggles, and weather location.",
     component: BasicSettingsPanel,
   },
   {

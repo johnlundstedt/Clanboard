@@ -30,7 +30,7 @@ function formatTemp(day, kind) {
   return <strong>{day[val]}{unit}</strong>;
 }
 
-export default function DashboardPage({ user, memberId }) {
+export default function DashboardPage({ user, memberId, member }) {
   const [data, setData] = useState(null);
   const [quick, setQuick] = useState("");
 
@@ -68,8 +68,10 @@ export default function DashboardPage({ user, memberId }) {
 
   const today = data.date;
   const memberName = memberId
-    ? data.children?.[0]?.child?.name?.split(" ")[0] || "there"
-    : user?.name?.split(" ")[0];
+    ? member?.name?.split(" ")[0] || data.children?.[0]?.child?.name?.split(" ")[0] || "there"
+    : user?.is_kiosk
+      ? `${user.family_name || "Clanboard"} Clan`
+      : user?.name?.split(" ")[0] || "there";
 
   const childRows = (data.children || []).filter((c) => c.todays.length > 0);
   const doneChildren = (data.children || []).filter(

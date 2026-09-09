@@ -302,12 +302,12 @@ router.get("/members", (req, res) => {
 });
 
 router.post("/members", (req, res) => {
-  const { name, photo_url, birthday, gender, role_id, nav_scope, is_admin, is_kiosk, password } = req.body;
+  const { name, photo_url, birthday, gender, role_id, nav_scope, is_admin, is_kiosk, hide_from_kiosk, password } = req.body;
   if (!name || !name.trim()) return res.status(400).json({ error: "name is required" });
 
   const info = db.prepare(`
-    INSERT INTO users (name, photo_url, birthday, gender, role_id, nav_scope, is_admin, is_kiosk, password_hash)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO users (name, photo_url, birthday, gender, role_id, nav_scope, is_admin, is_kiosk, hide_from_kiosk, password_hash)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     name.trim(),
     photo_url || null,
@@ -317,6 +317,7 @@ router.post("/members", (req, res) => {
     nav_scope || "all",
     is_admin ? 1 : 0,
     is_kiosk ? 1 : 0,
+    hide_from_kiosk ? 1 : 0,
     password ? hashPassword(password) : null
   );
   const user = db.prepare("SELECT * FROM users WHERE id = ?").get(info.lastInsertRowid);
@@ -328,11 +329,11 @@ router.patch("/members/:id", (req, res) => {
   const existing = db.prepare("SELECT * FROM users WHERE id = ?").get(req.params.id);
   if (!existing) return res.status(404).json({ error: "Not found" });
 
-  const { name, photo_url, birthday, gender, role_id, nav_scope, is_admin, is_kiosk, password } = req.body;
+  const { name, photo_url, birthday, gender, role_id, nav_scope, is_admin, is_kiosk, hide_from_kiosk, password } = req.body;
   db.prepare(`
     UPDATE users
     SET name = ?, photo_url = ?, birthday = ?, gender = ?, role_id = ?, nav_scope = ?,
-        is_admin = ?, is_kiosk = ?
+        is_admin = ?, is_kiosk = ?, hide_from_kiosk = ?
     WHERE id = ?
   `).run(
     name ?? existing.name,
@@ -343,6 +344,7 @@ router.patch("/members/:id", (req, res) => {
     nav_scope !== undefined ? nav_scope : existing.nav_scope,
     is_admin !== undefined ? (is_admin ? 1 : 0) : existing.is_admin,
     is_kiosk !== undefined ? (is_kiosk ? 1 : 0) : existing.is_kiosk,
+    hide_from_kiosk !== undefined ? (hide_from_kiosk ? 1 : 0) : existing.hide_from_kiosk,
     req.params.id
   );
 

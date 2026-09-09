@@ -39,6 +39,7 @@ export default function MembersPanel() {
       {(showForm || editing) && (
         <div className="card">
           <MemberForm
+            key={editing?.id ?? "new"}
             roles={roles}
             initial={editing}
             onCancel={() => { setShowForm(false); setEditing(null); }}
@@ -88,6 +89,7 @@ function MemberForm({ roles, initial, onCancel, onSaved }) {
   const [gender, setGender] = useState(initial?.gender || "");
   const [roleId, setRoleId] = useState(initial?.role_id || "");
   const [isAdmin, setIsAdmin] = useState(!!initial?.is_admin);
+  const [hideFromKiosk, setHideFromKiosk] = useState(!!initial?.hide_from_kiosk);
   const [password, setPassword] = useState("");
   const [photoUrl, setPhotoUrl] = useState(initial?.photo_url || "");
   const [uploading, setUploading] = useState(false);
@@ -145,6 +147,8 @@ function MemberForm({ roles, initial, onCancel, onSaved }) {
   }
 
   function closeCamera() {
+    streamRef.current?.getTracks().forEach((t) => t.stop());
+    streamRef.current = null;
     setCameraOpen(false);
   }
 
@@ -157,18 +161,22 @@ function MemberForm({ roles, initial, onCancel, onSaved }) {
     canvas.getContext("2d").drawImage(video, 0, 0);
     const data = canvas.toDataURL("image/jpeg", 0.85);
     setCameraOpen(false);
+    streamRef.current?.getTracks().forEach((t) => t.stop());
+    streamRef.current = null;
     uploadDataUrl(data);
   }
 
   useEffect(() => {
     if (cameraOpen && videoRef.current && streamRef.current) {
       videoRef.current.srcObject = streamRef.current;
+      videoRef.current.play().catch(() => {});
     }
-    return () => {
-      streamRef.current?.getTracks().forEach((t) => t.stop());
-      streamRef.current = null;
-    };
   }, [cameraOpen]);
+
+  useEffect(() => () => {
+    streamRef.current?.getTracks().forEach((t) => t.stop());
+    streamRef.current = null;
+  }, []);
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -180,12 +188,14 @@ function MemberForm({ roles, initial, onCancel, onSaved }) {
       role_id: roleId ? Number(roleId) : null,
       photo_url: photoUrl || null,
       is_admin: isAdmin,
+      hide_from_kiosk: hideFromKiosk,
       ...(password ? { password } : {}),
     };
     if (initial) await updateMember(initial.id, payload);
     else await createMember(payload);
     onCancel();
     onSaved();
+    window.dispatchEvent(new Event("fh:user-changed"));
   }
 
   return (
@@ -193,8 +203,9 @@ function MemberForm({ roles, initial, onCancel, onSaved }) {
       <h3 style={{ margin: 0 }}>{initial ? `Edit ${initial.name}` : "Add member"}</h3>
 
       <div className="row wrap">
-        <input className="grow" value={name} onChange={(e) => setName(e.target.value)} placeholder="Name" required autoFocus />
+        <input style={{ width: "18rem", maxWidth: "100%" }} value={name} onChange={(e) => setName(e.target.value)} placeholder="Name" required autoFocus />
         <input type="date" value={birthday || ""} onChange={(e) => setBirthday(e.target.value)} title="Birthday" />
+        {birthday && <span className="small muted">age {calculateAge(birthday)}</span>}
       </div>
 
       <div className="row wrap">
@@ -215,6 +226,10 @@ function MemberForm({ roles, initial, onCancel, onSaved }) {
         <label className="row small">
           <input type="checkbox" checked={isAdmin} onChange={(e) => setIsAdmin(e.target.checked)} />
           Admin
+        </label>
+        <label className="row small">
+          <input type="checkbox" checked={hideFromKiosk} onChange={(e) => setHideFromKiosk(e.target.checked)} />
+          Hide from wall display
         </label>
       </div>
 
@@ -250,6 +265,7 @@ function MemberForm({ roles, initial, onCancel, onSaved }) {
 
       <div className="row">
         <input
+          style={{ width: "25rem", maxWidth: "100%" }}
           type="password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
