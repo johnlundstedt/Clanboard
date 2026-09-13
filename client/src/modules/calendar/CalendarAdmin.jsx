@@ -59,7 +59,7 @@ export default function CalendarAdmin({ onSaved }) {
 
       {connections.length === 0 && (
         <div className="small muted">
-          Add a Google Calendar ID. Use a shared/API-key-accessible calendar — events load into the app but stay read-only.
+          Add a Google Calendar ID or paste a calendar share link (https://calendar.google.com/calendar/u/0?cid=…). Use a shared/API-key-accessible calendar — events load into the app but stay read-only.
         </div>
       )}
 
@@ -77,7 +77,7 @@ export default function CalendarAdmin({ onSaved }) {
 
       <div className="row wrap" style={{ gap: "0.4rem" }}>
         <input value={form.label} onChange={(e) => setForm({ ...form, label: e.target.value })} placeholder="Label (e.g. Kids)" style={{ flex: 1, minWidth: 90 }} />
-        <input value={form.calendar_id} onChange={(e) => setForm({ ...form, calendar_id: e.target.value })} placeholder="Google calendar ID" style={{ flex: 2, minWidth: 150 }} />
+        <input value={form.calendar_id} onChange={(e) => setForm({ ...form, calendar_id: e.target.value })} placeholder="Google calendar ID or share link" style={{ flex: 2, minWidth: 150 }} />
         <input value={form.api_key} onChange={(e) => setForm({ ...form, api_key: e.target.value })} placeholder="API key (optional)" style={{ flex: 2, minWidth: 150 }} />
         <select value={form.color} onChange={(e) => setForm({ ...form, color: e.target.value })}>
           {COLORS.map((c) => <option key={c || "none"} value={c}>{c ? "Color" : "Default"}</option>)}

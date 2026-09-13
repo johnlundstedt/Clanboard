@@ -14,3 +14,6 @@ data/uploads/
 
 # OS junk
 .DS_Store
+
+# Wrangler local state
+.wrangler/

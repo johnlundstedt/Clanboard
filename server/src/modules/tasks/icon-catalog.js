@@ -74,6 +74,9 @@ export const ALL_ICONS = Object.values(PRESET_ICONS).filter(
   (v, i, a) => a.indexOf(v) === i
 );
 
+// Matches the lowercased task name against the keyword rules and returns the
+// icon name to use, or null when nothing matches.
+/** @returns {string | null} */
 export function autoAssignIcon(name) {
   if (!name) return null;
   const lower = name.toLowerCase();

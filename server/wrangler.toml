@@ -1,0 +1,39 @@
+# Clanboard Cloudflare config — a single Worker (main = src/worker.ts) hosting
+# the Hono API and cron-triggered calendar sync, with the built client
+# (client/dist) served as static assets by the Workers Assets runtime. Static
+# asset requests are served before fetch() runs; anything that doesn't match an
+# asset (e.g. /api/*, /uploads/*) hits the Worker. clanboard.app and
+# www.clanboard.app are attached via Custom Domains (free plan supports static
+# assets and custom domains), DNS records are created automatically.
+#
+# Secrets (SESSION_SECRET, ADMIN_PASSWORD) are set separately with
+# `wrangler secret put` — never in this file. The 15-minute cron below drives
+# the Worker's scheduled() handler (Google Calendar sync).
+name = "clanboard"
+main = "src/worker.ts"
+compatibility_date = "2025-09-02"
+compatibility_flags = ["nodejs_compat"]
+
+[assets]
+directory = "../client/dist"
+not_found_handling = "single-page-application"
+
+[[d1_databases]]
+binding = "CLANBOARD"
+database_name = "clanboard"
+database_id = "95955c4d-9816-4cf9-a065-82c10e94db9f"
+
+[[r2_buckets]]
+binding = "UPLOADS"
+bucket_name = "clanboard-uploads"
+
+[[routes]]
+pattern = "clanboard.app"
+custom_domain = true
+
+[[routes]]
+pattern = "www.clanboard.app"
+custom_domain = true
+
+[triggers]
+crons = ["*/15 * * * *"]

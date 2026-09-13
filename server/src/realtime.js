@@ -1,5 +1,9 @@
 import { WebSocketServer } from "ws";
 
+// Node-container WebSocket transport only. Portable change notifications live
+// in src/web/events.js (change log + ws hook); this file is never imported by
+// the future Workers entry.
+
 let wss = null;
 
 export function setupRealtime(server) {
@@ -31,8 +35,3 @@ export function broadcast(table, payload = {}) {
     if (socket.readyState === 1) socket.send(msg);
   }
 }
-
-export function broadcastList() { broadcast("lists"); }
-export function broadcastTasks() { broadcast("tasks"); }
-export function broadcastMealPlan() { broadcast("meal_plan"); }
-export function broadcastUsers() { broadcast("users"); }

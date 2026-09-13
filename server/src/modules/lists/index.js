@@ -1,10 +1,11 @@
-import express from "express";
-import { db } from "../../db.js";
-import { broadcastList } from "../../realtime.js";
-import { requireCap } from "../../caps.js";
+import { Hono } from "hono";
+import { notifyList } from "../../web/events.js";
+import { containerDb } from "../../core/container-db.js";
+import { numParam, readJson, requireCap, respond } from "../../web/helpers.js";
+import * as core from "../../core/lists.js";
 
-function migrate(db) {
-  db.exec(`
+async function migrate(db) {
+  await db.exec(`
     CREATE TABLE IF NOT EXISTS lists (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,
@@ -22,74 +23,62 @@ function migrate(db) {
   `);
 
   // Seed a default "Groceries" list if none exist yet
-  const count = db.prepare("SELECT COUNT(*) AS c FROM lists").get().c;
+  const count = (await db.prepare("SELECT COUNT(*) AS c FROM lists").get()).c;
   if (count === 0) {
-    db.prepare("INSERT INTO lists (name) VALUES ('Groceries')").run();
+    await db.prepare("INSERT INTO lists (name) VALUES ('Groceries')").run();
   }
 }
 
-const router = express.Router();
+const app = new Hono();
 
-router.get("/", (req, res) => {
-  const lists = db.prepare("SELECT * FROM lists ORDER BY id").all();
-  for (const list of lists) {
-    list.items = db
-      .prepare("SELECT * FROM list_items WHERE list_id = ? ORDER BY id")
-      .all(list.id);
-  }
-  res.json(lists);
-});
+app.get("/", (c) => respond(c, () => core.listLists(containerDb)));
 
-router.post("/:listId/items", requireCap("lists", "add_items"), (req, res) => {
-  const { text } = req.body;
-  if (!text || !text.trim()) {
-    return res.status(400).json({ error: "text is required" });
-  }
-  const info = db
-    .prepare("INSERT INTO list_items (list_id, text) VALUES (?, ?)")
-    .run(req.params.listId, text.trim());
-  const item = db
-    .prepare("SELECT * FROM list_items WHERE id = ?")
-    .get(info.lastInsertRowid);
-  broadcastList();
-  res.status(201).json(item);
-});
+app.post("/:listId/items", requireCap(containerDb, "lists", "add_items"), (c) =>
+  respond(c, async () => {
+    const body = await readJson(c);
+    const item = await core.addItem(containerDb, numParam(c, "listId"), body.text);
+    notifyList();
+    return item;
+  }, { status: 201 })
+);
 
-router.patch("/items/:itemId", requireCap("lists", "complete_items"), (req, res) => {
-  const { checked } = req.body;
-  db.prepare("UPDATE list_items SET checked = ? WHERE id = ?").run(
-    checked ? 1 : 0,
-    req.params.itemId
-  );
-  broadcastList();
-  res.json({ ok: true });
-});
+app.patch("/items/:itemId", requireCap(containerDb, "lists", "complete_items"), (c) =>
+  respond(c, async () => {
+    const body = await readJson(c);
+    const out = await core.toggleItem(containerDb, numParam(c, "itemId"), body.checked);
+    notifyList();
+    return out;
+  })
+);
 
-router.delete("/items/:itemId", requireCap("lists", "remove_items"), (req, res) => {
-  db.prepare("DELETE FROM list_items WHERE id = ?").run(req.params.itemId);
-  broadcastList();
-  res.status(204).end();
-});
+app.delete("/items/:itemId", requireCap(containerDb, "lists", "remove_items"), (c) =>
+  respond(c, async () => {
+    await core.removeItem(containerDb, numParam(c, "itemId"));
+    notifyList();
+    return null;
+  }, { status: 204 })
+);
 
-router.post("/", requireCap("lists", "create_lists"), (req, res) => {
-  const { name } = req.body;
-  if (!name || !name.trim()) return res.status(400).json({ error: "name is required" });
-  const info = db.prepare("INSERT INTO lists (name) VALUES (?)").run(name.trim());
-  const list = db.prepare("SELECT * FROM lists WHERE id = ?").get(info.lastInsertRowid);
-  list.items = [];
-  broadcastList();
-  res.status(201).json(list);
-});
+app.post("/", requireCap(containerDb, "lists", "create_lists"), (c) =>
+  respond(c, async () => {
+    const body = await readJson(c);
+    const list = await core.createList(containerDb, body.name);
+    notifyList();
+    return list;
+  }, { status: 201 })
+);
 
-router.delete("/:listId", requireCap("lists", "delete_lists"), (req, res) => {
-  db.prepare("DELETE FROM lists WHERE id = ?").run(req.params.listId);
-  broadcastList();
-  res.status(204).end();
-});
+app.delete("/:listId", requireCap(containerDb, "lists", "delete_lists"), (c) =>
+  respond(c, async () => {
+    await core.deleteList(containerDb, numParam(c, "listId"));
+    notifyList();
+    return null;
+  }, { status: 204 })
+);
 
 export default {
   name: "lists",
   navLabel: "Lists",
   migrate,
-  router,
+  app,
 };

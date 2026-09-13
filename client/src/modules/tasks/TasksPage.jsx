@@ -53,6 +53,14 @@ export default function TasksPage({ user, memberId, member }) {
 
   const today = todayStr();
 
+  // System accounts (kiosk/wall-display logins) don't take part in tasks, so
+  // keep them out of the assignee picker, the member filter bar, and the
+  // per-member due counters.
+  const taskMembers = useMemo(
+    () => members.filter((m) => !m.system_account),
+    [members]
+  );
+
   const filtered = useMemo(() => {
     let list = tasks;
     if (memberFilter) {
@@ -109,7 +117,7 @@ export default function TasksPage({ user, memberId, member }) {
     }
   }
 
-  const memberById = useMemo(() => Object.fromEntries(members.map((m) => [m.id, m])), [members]);
+  const memberById = useMemo(() => Object.fromEntries(taskMembers.map((m) => [m.id, m])), [taskMembers]);
   const adult = !!user?.is_admin;
 
   // Capability shortcuts for the current user (admins / kiosk have everything).
@@ -133,7 +141,7 @@ export default function TasksPage({ user, memberId, member }) {
   const showMemberFilter = user?.is_kiosk ? false : !memberId && canViewOthers;
   const counts = useMemo(() => {
     const c = {};
-    for (const m of members) {
+    for (const m of taskMembers) {
       const mine = tasks.filter((t) => (t.assignees || []).some((a) => a.id === m.id));
       const dueUpToToday = mine.filter((t) => t.due_at && t.due_at.slice(0, 10) <= today);
       c[m.id] = {
@@ -142,17 +150,17 @@ export default function TasksPage({ user, memberId, member }) {
       };
     }
     return c;
-  }, [tasks, members, today]);
+  }, [tasks, taskMembers, today]);
 
   // Avatar bar order: oldest first by birthday, members without a birthday last.
   const memberPicks = useMemo(
-    () => [...members].sort((a, b) => {
+    () => [...taskMembers].sort((a, b) => {
       if (!a.birthday && !b.birthday) return 0;
       if (!a.birthday) return 1;
       if (!b.birthday) return -1;
       return a.birthday.localeCompare(b.birthday);
     }),
-    [members]
+    [taskMembers]
   );
 
   // On the kiosk, the heading names whose tasks are shown (sidebar selection);
@@ -174,7 +182,7 @@ export default function TasksPage({ user, memberId, member }) {
         <div className="card" style={{ marginBottom: "1rem" }}>
           <TaskForm
             key={editing?.id ?? "new"}
-            members={members}
+            members={taskMembers}
             categories={categories}
             priorities={priorities}
             settings={settings}

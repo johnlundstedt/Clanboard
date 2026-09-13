@@ -6,6 +6,14 @@ export default function AssigneeField({ value, members, onChange, addLabel = "+ 
   const byId = new Map(members.map((m) => [m.id, m]));
   const ids = value || [];
 
+  // Oldest (top) to youngest (bottom); members without a birthday go last.
+  const sorted = [...members].sort((a, b) => {
+    if (!a.birthday && !b.birthday) return 0;
+    if (!a.birthday) return 1;
+    if (!b.birthday) return -1;
+    return a.birthday.localeCompare(b.birthday);
+  });
+
   function add(id) {
     const n = Number(id);
     if (n && !ids.includes(n)) onChange([...ids, n]);
@@ -14,7 +22,7 @@ export default function AssigneeField({ value, members, onChange, addLabel = "+ 
     onChange(ids.filter((v) => v !== id));
   }
 
-  const available = members.filter((m) => !ids.includes(m.id));
+  const available = sorted.filter((m) => !ids.includes(m.id));
 
   return (
     <div className="row wrap" style={{ gap: "0.35rem" }}>

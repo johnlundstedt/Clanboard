@@ -130,7 +130,7 @@ function LoginScreen({ onLogin }) {
   return (
     <div className="login-wrap">
       <div className="login-brand">
-        <Logo size={300} />
+        <Logo size={150} />
         <h1><span className="clan">Clan</span> <span className="board">Board</span></h1>
         <p className="login-tagline">Clan life, organized.</p>
       </div>

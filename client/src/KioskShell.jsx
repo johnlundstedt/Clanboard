@@ -42,7 +42,7 @@ export default function KioskShell({ user, onLogout }) {
   // Ordered oldest (top) to youngest (bottom); no-birthday members go last.
   const sidebarMembers = useMemo(
     () => members
-      .filter((m) => !m.hide_from_kiosk)
+      .filter((m) => !m.system_account)
       .sort((a, b) => {
         if (!a.birthday && !b.birthday) return 0;
         if (!a.birthday) return 1;

@@ -1,42 +1,61 @@
-import { ensureModuleRow, isModuleEnabled } from "../db.js";
+import { Hono } from "hono";
+import { ensureModuleRow, isModuleEnabled } from "../core/db.js";
 
-// Each module file exports: { name, migrate(db), router, navLabel, jobs? }
-// `jobs` is an optional array of { name, intervalMs, run } background tasks.
+// Each module file exports: { name, migrate(db), app, navLabel, jobs? }
+// `app` is a Hono router; `jobs` is an optional array of
+// { name, intervalMs, run } background tasks.
 const modules = [];
+let activeDb = null;
 
 export function registerModule(mod) {
   modules.push(mod);
 }
 
-export function initModules(db) {
+// Boot hook. `db` is the Drizzle DbClient used for module queries; `raw` is
+// the better-sqlite3-shaped driver (raw better-sqlite3 on the container, a D1
+// adapter on the Worker) handed to each module's `migrate()` for its CREATE
+// TABLE / ALTER / seed work. Defaulting `raw` to `db` keeps single-arg callers
+// working, though both entries pass a real raw driver.
+//
+// `migrate()` is async because D1 prepares are async; on the container the
+// awaited calls resolve synchronously, so one contract serves both backends.
+export async function initModules(db, raw = db) {
+  activeDb = db;
   for (const mod of modules) {
-    ensureModuleRow(mod.name);
-    if (mod.migrate) mod.migrate(db);
+    await ensureModuleRow(activeDb, mod.name);
+    if (mod.migrate) await mod.migrate(raw);
   }
 }
 
-export function mountModules(app, guards = {}) {
+// Mount every module's Hono router under /api/<name>. Options:
+//   authenticated  - Hono middleware run first on every module route
+//   guards         - per-module Hono middleware (e.g. admin: requireAdmin)
+// Sub-apps stay mounted but reject requests while disabled, so the admin toggle
+// takes effect immediately without a restart.
+export function mountModules(parent, opts = {}) {
+  const { authenticated, guards = {} } = opts;
   for (const mod of modules) {
-    if (!mod.router) continue;
+    if (!mod.app) continue;
     const guard = guards[mod.name];
-    // Routers stay mounted but reject requests while disabled, so admin toggle
-    // takes effect immediately without a restart. `guard` (e.g. requireAdmin)
-    // runs before the router for modules that carry one.
-    app.use(`/api/${mod.name}`, (req, res, next) => {
-      if (!isModuleEnabled(mod.name)) {
-        return res.status(404).json({ error: "Module disabled" });
+    const sub = new Hono();
+    if (authenticated) sub.use("*", authenticated);
+    sub.use("*", async (c, next) => {
+      if (!(await isModuleEnabled(activeDb, mod.name))) {
+        return c.json({ error: "Module disabled" }, 404);
       }
-      if (guard) return guard(req, res, next);
-      next();
-    }, mod.router);
+      return next();
+    });
+    if (guard) sub.use("*", guard);
+    sub.route("/", mod.app);
+    parent.route(`/api/${mod.name}`, sub);
   }
 }
 
 export function startModuleJobs() {
   for (const mod of modules) {
     for (const job of mod.jobs || []) {
-      const timer = setInterval(() => {
-        if (isModuleEnabled(mod.name)) {
+      const timer = setInterval(async () => {
+        if (await isModuleEnabled(activeDb, mod.name)) {
           job.run().catch((err) => console.error(`[${mod.name}/${job.name}]`, err));
         }
       }, job.intervalMs);
@@ -45,11 +64,15 @@ export function startModuleJobs() {
   }
 }
 
-export function listModulesStatus() {
-  return modules.map((m) => ({
-    name: m.name,
-    navLabel: m.navLabel,
-    enabled: isModuleEnabled(m.name),
-    jobs: (m.jobs || []).map((j) => ({ name: j.name, intervalMs: j.intervalMs })),
-  }));
+export async function listModulesStatus() {
+  const statuses = [];
+  for (const m of modules) {
+    statuses.push({
+      name: m.name,
+      navLabel: m.navLabel,
+      enabled: await isModuleEnabled(activeDb, m.name),
+      jobs: (m.jobs || []).map((j) => ({ name: j.name, intervalMs: j.intervalMs })),
+    });
+  }
+  return statuses;
 }

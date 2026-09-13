@@ -1,0 +1,379 @@
+import { and, eq, sql } from "drizzle-orm";
+import type { DbClient } from "./db.js";
+import { getSetting, setSetting } from "./db.js";
+import { membersRoles, modules, roleModules, taskAssignees, userModules, users } from "../schema.js";
+import { badRequest, notFound } from "./errors.js";
+import { publicUser, hashPassword, type AuthUserRow } from "./auth.js";
+import { ROLE_CAPABILITIES } from "./role-caps.js";
+import {
+  getRole,
+  roleWithGrants,
+  setMemberModule,
+  type RoleWire,
+} from "./members.js";
+
+export { getRole, roleWithGrants } from "./members.js";
+
+// Modules a role can toggle + configure capabilities for (Home/Admin are locked).
+const ROLE_MODULES = ["tasks", "lists", "meal-plan", "calendar"];
+
+// Indexable view of the capability catalog keyed by module name.
+const CAPS: Record<string, readonly string[]> = ROLE_CAPABILITIES as unknown as Record<string, readonly string[]>;
+
+// Human labels for each capability (used by the admin UI checkboxes).
+const CAP_LABELS: Record<string, Record<string, string>> = {
+  tasks: {
+    view_others: "View other's tasks",
+    create: "Add new tasks",
+    create_unassigned: "Add new unassigned tasks",
+    assign_self: "Assign tasks to myself",
+    assign_others: "Assign tasks to others",
+    volunteer: "Volunteer for an unassigned task",
+    reassign: "Reassign tasks to another user",
+    edit: "Modify an existing task",
+    delete: "Delete a task",
+    update_deadline: "Update the deadline",
+    complete_own: "Mark my own tasks complete",
+    complete_others: "Mark other's tasks complete",
+    review: "Review a task and confirm it's done",
+  },
+  "meal-plan": {
+    edit: "Modify the meal plan",
+  },
+  lists: {
+    create_lists: "Create a list",
+    delete_lists: "Delete a list",
+    add_items: "Add an item to a list",
+    remove_items: "Remove an item from a list",
+    complete_items: "Mark a list item as complete",
+  },
+};
+
+// The catalog endpoint payload: per module, the (key, label) capability pairs.
+export function roleCapabilities() {
+  return {
+    modules: ROLE_MODULES.map((name) => ({
+      name,
+      caps: (CAPS[name] || []).map((cap) => ({
+        key: cap,
+        label: CAP_LABELS[name]?.[cap] || cap,
+      })),
+    })),
+  };
+}
+
+// Default capabilities per role for each module a role can grant. Keys are
+// capability names from ROLE_CAPABILITIES; true grants, false denies. Modules
+// not listed for a role stay off (the role matrix gates access entirely).
+const DEFAULT_ROLES: Record<string, Record<string, Record<string, boolean>>> = {
+  Parents: {
+    tasks: { view_others: true, create: true, create_unassigned: true, assign_self: true, assign_others: true, volunteer: true, reassign: true, edit: true, delete: true, update_deadline: true, complete_own: true, complete_others: true, review: true },
+    "meal-plan": { edit: true },
+    lists: { create_lists: true, delete_lists: true, add_items: true, remove_items: true, complete_items: true },
+    calendar: {},
+  },
+  "Older Kids": {
+    tasks: { view_others: true, create: true, create_unassigned: true, assign_self: true, assign_others: false, volunteer: true, reassign: false, edit: true, delete: true, update_deadline: true, complete_own: true, complete_others: false, review: false },
+    "meal-plan": { edit: false },
+    lists: { create_lists: true, delete_lists: false, add_items: true, remove_items: false, complete_items: true },
+    calendar: {},
+  },
+  "Younger Kids": {
+    tasks: { view_others: false, create: false, create_unassigned: false, assign_self: true, assign_others: false, volunteer: true, reassign: false, edit: false, delete: false, update_deadline: false, complete_own: true, complete_others: false, review: false },
+    "meal-plan": { edit: false },
+    lists: { create_lists: false, delete_lists: false, add_items: true, remove_items: false, complete_items: true },
+    calendar: {},
+  },
+  Kiosk: {
+    tasks: { view_others: true, create: false, create_unassigned: false, assign_self: true, assign_others: false, volunteer: true, reassign: false, edit: false, delete: false, update_deadline: false, complete_own: true, complete_others: true, review: false },
+    "meal-plan": { edit: false },
+    lists: { create_lists: false, delete_lists: false, add_items: true, remove_items: false, complete_items: true },
+    calendar: {},
+  },
+};
+
+function defaultRoleModule(name: string) {
+  const caps = CAPS[name] || [];
+  return {
+    name,
+    enabled: true,
+    caps: Object.fromEntries(caps.map((c) => [c, true])),
+  };
+}
+
+// Seed the default family roles on a fresh database (called at migrate time).
+export async function seedDefaultRoles(db: DbClient) {
+  const count = await db.select({ n: sql`COUNT(*)` }).from(membersRoles).get();
+  if (count?.n) return;
+
+  for (const [roleName, roleCfg] of Object.entries(DEFAULT_ROLES)) {
+    const inserted = await db
+      .insert(membersRoles)
+      .values({ name: roleName })
+      .returning({ id: membersRoles.id })
+      .get();
+    for (const [moduleName, moduleCfg] of Object.entries(roleCfg)) {
+      const caps = Object.fromEntries(
+        (CAPS[moduleName] || []).map((c) => [c, moduleCfg[c] === true])
+      );
+      await db
+        .insert(roleModules)
+        .values({ roleId: inserted.id, name: moduleName, enabled: true, caps: JSON.stringify(caps) })
+        .run();
+    }
+  }
+}
+
+interface ModuleBody {
+  name?: string;
+  enabled?: boolean;
+  caps?: Record<string, boolean>;
+}
+
+function normalizeModules(modulesBody: unknown) {
+  const list: ModuleBody[] = Array.isArray(modulesBody) ? (modulesBody as ModuleBody[]) : [];
+  const byName = new Map(list.map((m) => [m.name, m]));
+  return ROLE_MODULES.map((name) => {
+    const m = byName.get(name);
+    return {
+      name,
+      enabled: m ? !!m.enabled : true,
+      caps: { ...(defaultRoleModule(name).caps), ...(m && m.caps ? m.caps : {}) },
+    };
+  });
+}
+
+// --- Household settings ------------------------------------------------------
+export interface AdminSettings {
+  family_name: string | null;
+  latitude: string | null;
+  longitude: string | null;
+  weather_location: string | null;
+  weather_units: string;
+  tasks_enable_categories: boolean;
+  tasks_enable_priorities: boolean;
+  tasks_enable_dollar: boolean;
+}
+
+export async function getAdminSettings(db: DbClient): Promise<AdminSettings> {
+  return {
+    family_name: await getSetting(db, "family_name"),
+    latitude: await getSetting(db, "latitude"),
+    longitude: await getSetting(db, "longitude"),
+    weather_location: await getSetting(db, "weather_location"),
+    weather_units: (await getSetting(db, "weather_units")) || "metric",
+    tasks_enable_categories: (await getSetting(db, "tasks_enable_categories")) !== "0",
+    tasks_enable_priorities: (await getSetting(db, "tasks_enable_priorities")) !== "0",
+    tasks_enable_dollar: (await getSetting(db, "tasks_enable_dollar")) === "1",
+  };
+}
+
+function flagToStorage(value: unknown, current: string | null): string | null {
+  if (value === undefined) return current;
+  return value ? "1" : "0";
+}
+
+// Apply basic household settings. Empty lat/lon clears the value (null).
+export async function updateAdminSettings(db: DbClient, body: Partial<AdminSettings> & Record<string, unknown>) {
+  const { family_name, latitude, longitude, weather_location, weather_units, tasks_enable_categories, tasks_enable_priorities, tasks_enable_dollar } = body;
+  if (family_name !== undefined) await setSetting(db, "family_name", String(family_name));
+  if (latitude !== undefined) await setSetting(db, "latitude", latitude === "" || latitude == null ? null : String(latitude));
+  if (longitude !== undefined) await setSetting(db, "longitude", longitude === "" || longitude == null ? null : String(longitude));
+  if (weather_location !== undefined) await setSetting(db, "weather_location", String(weather_location));
+  if (weather_units !== undefined) {
+    const units = ["imperial", "metric", "both"].includes(String(weather_units)) ? String(weather_units) : "metric";
+    await setSetting(db, "weather_units", units);
+  }
+  if (tasks_enable_categories !== undefined) {
+    await setSetting(db, "tasks_enable_categories", flagToStorage(tasks_enable_categories, await getSetting(db, "tasks_enable_categories")));
+  }
+  if (tasks_enable_priorities !== undefined) {
+    await setSetting(db, "tasks_enable_priorities", flagToStorage(tasks_enable_priorities, await getSetting(db, "tasks_enable_priorities")));
+  }
+  if (tasks_enable_dollar !== undefined) {
+    await setSetting(db, "tasks_enable_dollar", flagToStorage(tasks_enable_dollar, await getSetting(db, "tasks_enable_dollar")));
+  }
+}
+
+// --- Module toggles ----------------------------------------------------------
+export async function setModuleEnabled(db: DbClient, name: string, enabled: unknown) {
+  await db.update(modules).set({ enabled: Boolean(enabled) }).where(eq(modules.name, name)).run();
+}
+
+// --- Roles -------------------------------------------------------------------
+export async function listRoles(db: DbClient) {
+  const rows = await db.select().from(membersRoles).orderBy(membersRoles.id).all();
+  const roles: RoleWire[] = [];
+  for (const row of rows) {
+    const r = await roleWithGrants(db, { id: row.id, name: row.name, modules: [] });
+    if (r) roles.push(r);
+  }
+  return roles;
+}
+
+export async function createRole(db: DbClient, name: string | undefined, modulesBody: unknown) {
+  if (!name || !name.trim()) throw badRequest("name is required");
+  const clash = await db.select().from(membersRoles).where(sql`name = ${name.trim()} COLLATE BINARY`).get();
+  if (clash) throw badRequest("A role with that name already exists");
+  const inserted = await db
+    .insert(membersRoles)
+    .values({ name: name.trim() })
+    .returning({ id: membersRoles.id, name: membersRoles.name })
+    .get();
+  for (const m of normalizeModules(modulesBody)) {
+    await db
+      .insert(roleModules)
+      .values({ roleId: inserted.id, name: m.name, enabled: m.enabled, caps: JSON.stringify(m.caps) })
+      .run();
+  }
+  return roleWithGrants(db, { id: inserted.id, name: inserted.name, modules: [] }) as Promise<RoleWire>;
+}
+
+export async function updateRole(
+  db: DbClient,
+  id: number,
+  body: { name?: string; modules?: unknown }
+): Promise<RoleWire> {
+  const role = await getRole(db, id);
+  if (!role) throw notFound("Role not found");
+  const { name, modules: modulesBody } = body;
+  if (name !== undefined) {
+    if (!name.trim()) throw badRequest("name is required");
+    const clash = await db
+      .select()
+      .from(membersRoles)
+      .where(and(sql`name = ${name.trim()} COLLATE BINARY`, sql`id != ${id}`))
+      .get();
+    if (clash) throw badRequest("A role with that name already exists");
+    await db.update(membersRoles).set({ name: name.trim() }).where(eq(membersRoles.id, id)).run();
+  }
+  if (modulesBody !== undefined) {
+    await db.delete(roleModules).where(eq(roleModules.roleId, id)).run();
+    for (const m of normalizeModules(modulesBody)) {
+      await db
+        .insert(roleModules)
+        .values({ roleId: id, name: m.name, enabled: m.enabled, caps: JSON.stringify(m.caps) })
+        .run();
+    }
+  }
+  const updated = await getRole(db, id);
+  return (await roleWithGrants(db, updated)) as RoleWire;
+}
+
+export async function deleteRole(db: DbClient, id: number) {
+  const role = await getRole(db, id);
+  if (!role) throw notFound("Role not found");
+  await db.delete(membersRoles).where(eq(membersRoles.id, id)).run();
+}
+
+// --- Members -----------------------------------------------------------------
+// The ORIGINAL handlers sent raw table rows (snake_case) to publicUser. Drizzle
+// returns camelCase, so map back to the snake shape publicUser expects.
+function snakeUser(u: typeof users.$inferSelect): AuthUserRow {
+  return {
+    id: u.id,
+    name: u.name,
+    photo_url: u.photoUrl,
+    birthday: u.birthday,
+    gender: u.gender,
+    role_id: u.roleId,
+    nav_scope: u.navScope,
+    is_admin: u.isAdmin,
+    is_kiosk: u.isKiosk,
+    system_account: u.systemAccount,
+    password_hash: u.passwordHash,
+  };
+}
+
+export async function listMembers(db: DbClient) {
+  const rows = await db.select().from(users).orderBy(users.id).all();
+  return rows.map((u) => publicUser(snakeUser(u)));
+}
+
+export interface MemberBody {
+  name?: string;
+  photo_url?: string | null;
+  birthday?: string | null;
+  gender?: string | null;
+  role_id?: number | null;
+  nav_scope?: string;
+  is_admin?: boolean;
+  is_kiosk?: boolean;
+  system_account?: boolean;
+  password?: string;
+}
+
+async function insertMember(db: DbClient, body: MemberBody) {
+  const { name, password } = body;
+  if (!name || !name.trim()) throw badRequest("name is required");
+  return db
+    .insert(users)
+    .values({
+      name: name.trim(),
+      photoUrl: body.photo_url || null,
+      birthday: body.birthday || null,
+      gender: body.gender || null,
+      roleId: body.role_id ? Number(body.role_id) : null,
+      navScope: body.nav_scope || "all",
+      isAdmin: !!body.is_admin,
+      isKiosk: !!body.is_kiosk,
+      systemAccount: !!body.system_account,
+      passwordHash: password ? hashPassword(password) : null,
+    })
+    .returning()
+    .get();
+}
+
+export async function createMember(db: DbClient, body: MemberBody) {
+  const row = await insertMember(db, body);
+  return publicUser(snakeUser(row));
+}
+
+export async function updateMember(db: DbClient, id: number, body: MemberBody) {
+  const existing = await db.select().from(users).where(eq(users.id, id)).get();
+  if (!existing) throw notFound("Not found");
+  const { name, photo_url, birthday, gender, role_id, nav_scope, is_admin, is_kiosk, system_account, password } = body;
+  await db
+    .update(users)
+    .set({
+      name: name ?? existing.name,
+      photoUrl: photo_url !== undefined ? photo_url : existing.photoUrl,
+      birthday: birthday !== undefined ? birthday : existing.birthday,
+      gender: gender !== undefined ? gender : existing.gender,
+      roleId: role_id !== undefined ? (role_id ? Number(role_id) : null) : existing.roleId,
+      navScope: nav_scope !== undefined ? nav_scope : existing.navScope,
+      isAdmin: is_admin !== undefined ? !!is_admin : existing.isAdmin,
+      isKiosk: is_kiosk !== undefined ? !!is_kiosk : existing.isKiosk,
+      systemAccount: system_account !== undefined ? !!system_account : existing.systemAccount,
+    })
+    .where(eq(users.id, id))
+    .run();
+  if (password) {
+    await db.update(users).set({ passwordHash: hashPassword(password) }).where(eq(users.id, id)).run();
+  }
+  const updated = await db.select().from(users).where(eq(users.id, id)).get();
+  if (!updated) throw notFound("Not found");
+  return publicUser(snakeUser(updated));
+}
+
+export async function deleteMember(db: DbClient, id: number) {
+  await db.delete(taskAssignees).where(eq(taskAssignees.userId, id)).run();
+  await db.delete(users).where(eq(users.id, id)).run();
+}
+
+// --- Per-member module access -------------------------------------------------
+export async function getMemberModules(db: DbClient, userId: number) {
+  const rows = await db.select({ name: userModules.name, enabled: userModules.enabled }).from(userModules).where(eq(userModules.userId, userId)).all();
+  return { overrides: Object.fromEntries(rows.map((o) => [o.name, !!o.enabled])) };
+}
+
+// enabled=false disables for this member, true enables, null clears the override.
+export async function setMemberModules(db: DbClient, userId: number, moduleName: string, enabled: unknown) {
+  await setMemberModule(db, userId, moduleName, enabled === undefined ? null : enabled);
+}
+
+export async function memberExists(db: DbClient, id: number) {
+  const row = await db.select({ id: users.id }).from(users).where(eq(users.id, id)).get();
+  if (!row) throw notFound("Not found");
+  return row;
+}

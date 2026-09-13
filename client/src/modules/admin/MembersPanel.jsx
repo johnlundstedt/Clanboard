@@ -13,6 +13,7 @@ export default function MembersPanel() {
   const [roles, setRoles] = useState([]);
   const [editing, setEditing] = useState(null);
   const [showForm, setShowForm] = useState(false);
+  const [showSystemAccounts, setShowSystemAccounts] = useState(false);
 
   const refresh = useCallback(async () => {
     const [m, r] = await Promise.all([getMembers(), getRoles()]);
@@ -23,6 +24,12 @@ export default function MembersPanel() {
   usePolling("users", refresh);
 
   useEffect(() => { refresh(); }, [refresh]);
+
+  // System accounts (e.g. the kiosk / wall-display login) are hidden until the
+  // "Show system accounts" toggle is switched on.
+  const visibleMembers = showSystemAccounts
+    ? members
+    : members.filter((m) => !m.system_account);
 
   return (
     <div style={{ display: "grid", gap: "1rem" }}>
@@ -50,8 +57,12 @@ export default function MembersPanel() {
 
       <div className="card">
         <h2 style={{ marginTop: 0, fontSize: "1.1rem" }}>Household members</h2>
+        <label className="row small" style={{ marginBottom: "0.6rem" }}>
+          <input type="checkbox" checked={showSystemAccounts} onChange={(e) => setShowSystemAccounts(e.target.checked)} />
+          Show system accounts
+        </label>
         <div style={{ display: "grid", gap: "0.4rem" }}>
-          {members.map((m) => (
+          {visibleMembers.map((m) => (
             <div key={m.id} className="row" style={{ padding: "0.3rem 0" }}>
               <Avatar user={m} />
               <div className="grow">
@@ -72,7 +83,7 @@ export default function MembersPanel() {
               }}>✕</button>
             </div>
           ))}
-          {members.length === 0 && <p className="muted">No members yet.</p>}
+          {visibleMembers.length === 0 && <p className="muted">No members yet.</p>}
         </div>
       </div>
     </div>
@@ -89,7 +100,7 @@ function MemberForm({ roles, initial, onCancel, onSaved }) {
   const [gender, setGender] = useState(initial?.gender || "");
   const [roleId, setRoleId] = useState(initial?.role_id || "");
   const [isAdmin, setIsAdmin] = useState(!!initial?.is_admin);
-  const [hideFromKiosk, setHideFromKiosk] = useState(!!initial?.hide_from_kiosk);
+  const [systemAccount, setSystemAccount] = useState(!!initial?.system_account);
   const [password, setPassword] = useState("");
   const [photoUrl, setPhotoUrl] = useState(initial?.photo_url || "");
   const [uploading, setUploading] = useState(false);
@@ -188,7 +199,7 @@ function MemberForm({ roles, initial, onCancel, onSaved }) {
       role_id: roleId ? Number(roleId) : null,
       photo_url: photoUrl || null,
       is_admin: isAdmin,
-      hide_from_kiosk: hideFromKiosk,
+      system_account: systemAccount,
       ...(password ? { password } : {}),
     };
     if (initial) await updateMember(initial.id, payload);
@@ -228,8 +239,8 @@ function MemberForm({ roles, initial, onCancel, onSaved }) {
           Admin
         </label>
         <label className="row small">
-          <input type="checkbox" checked={hideFromKiosk} onChange={(e) => setHideFromKiosk(e.target.checked)} />
-          Hide from wall display
+          <input type="checkbox" checked={systemAccount} onChange={(e) => setSystemAccount(e.target.checked)} />
+          System Account
         </label>
       </div>
 

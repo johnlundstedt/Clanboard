@@ -47,6 +47,29 @@ docker run -p 3001:3001 -e SESSION_SECRET=change-me -e ADMIN_PASSWORD=change-me 
 
 Visit http://localhost:3001
 
+## Cloudflare (Workers + D1 + R2)
+
+The same portable core also runs on Cloudflare's free tier as a single Worker
+(`server/src/worker.ts`): the React build (`client/dist`) is served as Workers
+static assets, D1 is the database, and R2 holds uploaded photos. The schema
+and module migrations are applied idempotently at worker boot from embedded
+SQL, so there is no separate migration step for Cloudflare.
+
+Wrangler needs Node ≥ 22; deploy from `server/` (`server/wrangler.toml` holds
+the D1 + R2 bindings, custom domains, and the 15-minute sync cron):
+
+```bash
+cd server && npm install
+npm run db:gen-schema                # embed drizzle SQL for the Worker (no fs on Workers)
+( cd ../client && npm install && npm run build )   # produces client/dist
+npx wrangler secret put SESSION_SECRET
+npx wrangler secret put ADMIN_PASSWORD
+npx wrangler deploy                  # worker + assets + clanboard.app/www custom domains + cron
+```
+
+On first boot against an empty D1, the worker creates the initial admin from
+the `ADMIN_PASSWORD` secret.
+
 ## Status
 
 Auth, module registry, and all six modules (Tasks, Lists, Meal Plan, Calendar,
