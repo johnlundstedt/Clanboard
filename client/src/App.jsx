@@ -128,12 +128,7 @@ export default function App() {
           ))}
         </div>
         <span className="nav-actions">
-          <span className="avatar-wrap">
-            <Avatar user={user} className="nav-avatar" />
-            {myDueCount > 0 && (
-              <span className="avatar-badge" title={`${myDueCount} task${myDueCount === 1 ? "" : "s"} of yours due today or overdue`}>{myDueCount}</span>
-            )}
-          </span>
+          <Avatar user={user} className="nav-avatar" />
           <button className="navlink" title="Log out" onClick={async () => { await logout(); setUser(null); }}>
             <LogOut size={32} />
           </button>
