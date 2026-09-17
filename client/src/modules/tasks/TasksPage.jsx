@@ -9,11 +9,7 @@ import {
   getTaskSettings, getTaskCategories, getTaskPriorities,
 } from "../../api.js";
 import { usePolling } from "../../realtime.js";
-
-function todayStr() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
+import { isFullyDone, isOutstandingDueTodayOrOverdue, todayStr } from "./taskUtils.js";
 
 function addDaysStr(day, n) {
   const d = new Date(`${day}T12:00:00`);
@@ -175,16 +171,16 @@ export default function TasksPage({ user, memberId, member }) {
     const c = {};
     for (const m of taskMembers) {
       const mine = tasks.filter((t) => (t.assignees || []).some((a) => a.id === m.id));
-      // A task counts as incomplete until it's completed AND, when it requires
-      // an adult, reviewed — matching the "fully done" state used in TaskRow.
-      const fullyDone = (t) => t.completed_at && (!t.requires_adult_review || t.reviewed_at);
       c[m.id] = {
         total: mine.length,
-        incomplete: mine.filter((t) => !fullyDone(t)).length,
+        // All not-fully-done tasks (any due date), for the green "all done" ✓.
+        incomplete: mine.filter((t) => !isFullyDone(t)).length,
+        // The badge number: outstanding tasks due today or overdue.
+        dueCount: mine.filter((t) => isOutstandingDueTodayOrOverdue(t, today)).length,
       };
     }
     return c;
-  }, [tasks, taskMembers]);
+  }, [tasks, taskMembers, today]);
 
   // Avatar bar order: oldest first by birthday, members without a birthday last.
   const memberPicks = useMemo(
@@ -251,9 +247,11 @@ export default function TasksPage({ user, memberId, member }) {
               <span className="avatar-wrap">
                 <Avatar user={m} />
                 {counts[m.id]?.total > 0 && (
-                  counts[m.id].incomplete > 0
-                    ? <span className="avatar-badge" title={`${counts[m.id].incomplete} incomplete task${counts[m.id].incomplete === 1 ? "" : "s"}`}>{counts[m.id].incomplete}</span>
-                    : <span className="avatar-badge green" title="All tasks done">✓</span>
+                  counts[m.id].dueCount > 0
+                    ? <span className="avatar-badge" title={`${counts[m.id].dueCount} task${counts[m.id].dueCount === 1 ? "" : "s"} due today or overdue`}>{counts[m.id].dueCount}</span>
+                    : counts[m.id].incomplete === 0
+                      ? <span className="avatar-badge green" title="All tasks done">✓</span>
+                      : null
                 )}
               </span>
               <span className="member-name">{m.name.split(" ")[0]}</span>
@@ -342,10 +340,6 @@ function TaskSection({ heading, count, children }) {
       </div>
     </section>
   );
-}
-
-function isFullyDone(task) {
-  return task.completed_at && (!task.requires_adult_review || task.reviewed_at);
 }
 
 function dayShort(code) {

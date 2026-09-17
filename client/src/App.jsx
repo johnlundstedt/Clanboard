@@ -1,43 +1,47 @@
 import { useCallback, useEffect, useState } from "react";
 import { User, Lock, LogOut } from "lucide-react";
 import modules, { getClientModule } from "./modules/index.js";
-import { getMe, login, logout, forgotPassword, setPassword, getTodayTasks } from "./api.js";
+import { getMe, login, logout, forgotPassword, setPassword, getTodayTasks, getTasks } from "./api.js";
 import { ensureRealtime, usePolling } from "./realtime.js";
+import { isOutstandingDueTodayOrOverdue, todayStr } from "./modules/tasks/taskUtils.js";
 import KioskShell from "./KioskShell.jsx";
 import Logo from "./components/Logo.jsx";
 import Avatar from "./components/Avatar.jsx";
 import PasswordInput from "./components/PasswordInput.jsx";
-
-function todayStr() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
 
 export default function App() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [active, setActive] = useState(null);
   const [todayDueCount, setTodayDueCount] = useState(0);
+  const [myDueCount, setMyDueCount] = useState(0);
 
   const tasksEnabled = !!user && !user.is_kiosk && (user.enabled_modules || []).includes("tasks");
 
-  const refreshTodayDue = useCallback(async () => {
+  const refreshHeaderCounts = useCallback(async () => {
     try {
-      const { date, dueToday } = await getTodayTasks();
-      const today = date || todayStr();
+      const [{ date, dueToday }, mine] = await Promise.all([getTodayTasks(), getTasks()]);
+      const today = (mine[0] && mine[0].today) || date || todayStr();
       setTodayDueCount(dueToday.filter((t) => (t.due_at || "").slice(0, 10) === today).length);
+      setMyDueCount(
+        mine.filter(
+          (t) =>
+            (t.assignees || []).some((a) => a.id === user?.id) &&
+            isOutstandingDueTodayOrOverdue(t, today)
+        ).length
+      );
     } catch {
       /* not signed in / tasks unavailable — keep whatever we had */
     }
-  }, []);
+  }, [user]);
 
-  // Keep the header count fresh: subscribe to the tasks change bus (same
+  // Keep the header counts fresh: subscribe to the tasks change bus (same
   // shared realtime poller the pages use), but only once the member can see
   // tasks.
-  usePolling("tasks", refreshTodayDue);
+  usePolling("tasks", refreshHeaderCounts);
   useEffect(() => {
-    if (tasksEnabled) refreshTodayDue();
-  }, [tasksEnabled, refreshTodayDue]);
+    if (tasksEnabled) refreshHeaderCounts();
+  }, [tasksEnabled, refreshHeaderCounts]);
 
   useEffect(() => {
     function onUnauthorized() {
@@ -126,7 +130,12 @@ export default function App() {
           ))}
         </div>
         <span className="nav-actions">
-          <Avatar user={user} className="nav-avatar" />
+          <span className="avatar-wrap">
+            <Avatar user={user} className="nav-avatar" />
+            {myDueCount > 0 && (
+              <span className="avatar-badge" title={`${myDueCount} task${myDueCount === 1 ? "" : "s"} of yours due today or overdue`}>{myDueCount}</span>
+            )}
+          </span>
           <button className="navlink" title="Log out" onClick={async () => { await logout(); setUser(null); }}>
             <LogOut size={32} />
           </button>

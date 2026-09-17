@@ -4,6 +4,7 @@ import modules, { getClientModule } from "./modules/index.js";
 import Avatar from "./components/Avatar.jsx";
 import { getModules, getMembers, getTasks, logout } from "./api.js";
 import { usePolling } from "./realtime.js";
+import { isFullyDone, isOutstandingDueTodayOrOverdue, todayStr } from "./modules/tasks/taskUtils.js";
 import Logo from "./components/Logo.jsx";
 
 // Wall display: keep the screen awake for as long as the kiosk is open.
@@ -90,21 +91,31 @@ export default function KioskShell({ user, onLogout }) {
     [members]
   );
 
-  // Per-member task counters for the sidebar badges (mirrors the Tasks module:
-  // badge = incomplete assigned tasks, green ✓ when all fully done, none when
-  // the member has no assigned tasks).
+  // The server stamps its canonical "today" on every task row (same day that
+  // drives due_at), which all the badge counters below bucket against.
+  const today = (tasks[0] && tasks[0].today) || todayStr();
+
+  // Per-member task counters for the sidebar badges: number shows outstanding
+  // tasks due today or overdue; green ✓ when everything is fully done; nothing
+  // when the member has no assigned tasks (or only tasks due in the future).
   const counts = useMemo(() => {
     const c = {};
     for (const m of sidebarMembers) {
       const mine = tasks.filter((t) => (t.assignees || []).some((a) => a.id === m.id));
-      const fullyDone = (t) => t.completed_at && (!t.requires_adult_review || t.reviewed_at);
       c[m.id] = {
         total: mine.length,
-        incomplete: mine.filter((t) => !fullyDone(t)).length,
+        incomplete: mine.filter((t) => !isFullyDone(t)).length,
+        dueCount: mine.filter((t) => isOutstandingDueTodayOrOverdue(t, today)).length,
       };
     }
     return c;
-  }, [tasks, sidebarMembers]);
+  }, [tasks, sidebarMembers, today]);
+
+  // Whole-household urgent-task count for the kiosk header badge.
+  const familyDueCount = useMemo(
+    () => tasks.filter((t) => isOutstandingDueTodayOrOverdue(t, today)).length,
+    [tasks, today]
+  );
 
   // Modules visible for the selected member, or the globally-enabled set when
   // the whole family is selected. Admin-only modules need an admin selected.
@@ -161,6 +172,14 @@ export default function KioskShell({ user, onLogout }) {
           ))}
         </div>
         <span className="nav-actions">
+          {familyDueCount > 0 && (
+            <span
+              className="count-badge"
+              title={`${familyDueCount} task${familyDueCount === 1 ? "" : "s"} due today or overdue across the whole clan`}
+            >
+              {familyDueCount}
+            </span>
+          )}
           <button className="navlink" title="Log out" onClick={async () => { await logout(); onLogout(); }}>
             <LogOut size={32} />
           </button>
@@ -190,9 +209,11 @@ export default function KioskShell({ user, onLogout }) {
               <span className="avatar-wrap">
                 <Avatar user={m} size="lg" />
                 {counts[m.id]?.total > 0 && (
-                  counts[m.id].incomplete > 0
-                    ? <span className="avatar-badge" title={`${counts[m.id].incomplete} incomplete task${counts[m.id].incomplete === 1 ? "" : "s"}`}>{counts[m.id].incomplete}</span>
-                    : <span className="avatar-badge green" title="All tasks done">✓</span>
+                  counts[m.id].dueCount > 0
+                    ? <span className="avatar-badge" title={`${counts[m.id].dueCount} task${counts[m.id].dueCount === 1 ? "" : "s"} due today or overdue`}>{counts[m.id].dueCount}</span>
+                    : counts[m.id].incomplete === 0
+                      ? <span className="avatar-badge green" title="All tasks done">✓</span>
+                      : null
                 )}
               </span>
               <span className="kiosk-name">{m.name}</span>
