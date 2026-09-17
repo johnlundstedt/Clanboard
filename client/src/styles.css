@@ -182,7 +182,13 @@ input:focus, select:focus, textarea:focus {
   color: #fff;
   box-shadow: 0 0 0 2px var(--surface, #fff);
 }
-.avatar-badge.green { background: #dcfce7; color: #166534; }
+.avatar-badge.green {
+  background: #16a34a;
+  color: #fff;
+  min-width: 20px;
+  height: 20px;
+  font-size: 0.72rem;
+}
 
 /* Multi-assignee tag chips */
 .chip {
