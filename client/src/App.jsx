@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { User, Lock, LogOut } from "lucide-react";
 import modules, { getClientModule } from "./modules/index.js";
-import { getMe, login, logout, forgotPassword, setPassword, getTodayTasks, getTasks } from "./api.js";
+import { getMe, login, logout, forgotPassword, setPassword, getTasks } from "./api.js";
 import { ensureRealtime, usePolling } from "./realtime.js";
 import { isOutstandingDueTodayOrOverdue, todayStr } from "./modules/tasks/taskUtils.js";
 import KioskShell from "./KioskShell.jsx";
@@ -13,16 +13,14 @@ export default function App() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [active, setActive] = useState(null);
-  const [todayDueCount, setTodayDueCount] = useState(0);
   const [myDueCount, setMyDueCount] = useState(0);
 
   const tasksEnabled = !!user && !user.is_kiosk && (user.enabled_modules || []).includes("tasks");
 
-  const refreshHeaderCounts = useCallback(async () => {
+  const refreshMyDueCount = useCallback(async () => {
     try {
-      const [{ date, dueToday }, mine] = await Promise.all([getTodayTasks(), getTasks()]);
-      const today = (mine[0] && mine[0].today) || date || todayStr();
-      setTodayDueCount(dueToday.filter((t) => (t.due_at || "").slice(0, 10) === today).length);
+      const mine = await getTasks();
+      const today = (mine[0] && mine[0].today) || todayStr();
       setMyDueCount(
         mine.filter(
           (t) =>
@@ -35,13 +33,13 @@ export default function App() {
     }
   }, [user]);
 
-  // Keep the header counts fresh: subscribe to the tasks change bus (same
+  // Keep the header count fresh: subscribe to the tasks change bus (same
   // shared realtime poller the pages use), but only once the member can see
   // tasks.
-  usePolling("tasks", refreshHeaderCounts);
+  usePolling("tasks", refreshMyDueCount);
   useEffect(() => {
-    if (tasksEnabled) refreshHeaderCounts();
-  }, [tasksEnabled, refreshHeaderCounts]);
+    if (tasksEnabled) refreshMyDueCount();
+  }, [tasksEnabled, refreshMyDueCount]);
 
   useEffect(() => {
     function onUnauthorized() {
@@ -123,8 +121,8 @@ export default function App() {
               title={m.navLabel}
             >
               {m.icon && <m.icon size={34} />}
-              {m.name === "tasks" && todayDueCount > 0 && (
-                <span className="nav-badge" title="Outstanding tasks due today">{todayDueCount}</span>
+              {m.name === "tasks" && myDueCount > 0 && (
+                <span className="nav-badge" title={`${myDueCount} task${myDueCount === 1 ? "" : "s"} of yours due today or overdue`}>{myDueCount}</span>
               )}
             </button>
           ))}

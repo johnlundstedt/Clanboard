@@ -168,18 +168,13 @@ export default function KioskShell({ user, onLogout }) {
               title={m.navLabel}
             >
               {m.icon && <m.icon size={34} />}
+              {m.name === "tasks" && familyDueCount > 0 && (
+                <span className="nav-badge" title={`${familyDueCount} task${familyDueCount === 1 ? "" : "s"} due today or overdue across the whole clan`}>{familyDueCount}</span>
+              )}
             </button>
           ))}
         </div>
         <span className="nav-actions">
-          {familyDueCount > 0 && (
-            <span
-              className="count-badge"
-              title={`${familyDueCount} task${familyDueCount === 1 ? "" : "s"} due today or overdue across the whole clan`}
-            >
-              {familyDueCount}
-            </span>
-          )}
           <button className="navlink" title="Log out" onClick={async () => { await logout(); onLogout(); }}>
             <LogOut size={32} />
           </button>
