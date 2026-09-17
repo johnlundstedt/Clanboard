@@ -2,6 +2,7 @@ import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { migrationStatements as coreMigrationStatements } from "../../src/core/migrations.js";
 import { ensureTaskOccurrencesTable } from "../../src/modules/tasks/task-occurrences-table.js";
+import { ensureListItemsColumns } from "../../src/modules/lists/list-items-columns.js";
 import Database from "better-sqlite3";
 import type { D1Database, R2Bucket } from "@cloudflare/workers-types";
 import { drizzle as drizzleFromSqlite, type BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
@@ -66,6 +67,7 @@ export async function makeSqliteDatabase(): Promise<TestDatabase> {
   // applies the guarded task_occurrences rebuild (nullable completed_at) that
   // the schema migrations can't express, so mirror it here for parity.
   await ensureTaskOccurrencesTable(raw);
+  await ensureListItemsColumns(raw);
   const sqlite = drizzleFromSqlite(raw);
   const selectAll = (q: string): Record<string, unknown>[] =>
     (raw.prepare(q) as { all(): unknown[] }).all() as Record<string, unknown>[];
@@ -148,6 +150,7 @@ export async function makeD1Database(): Promise<TestDatabase> {
     }
     // Same module-migrate parity as the sqlite harness (see makeSqliteDatabase).
     await ensureTaskOccurrencesTable(d1Sql);
+    await ensureListItemsColumns(d1Sql);
     d1Migrated = true;
   }
   const d1 = drizzleFromD1(raw);

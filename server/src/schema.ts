@@ -207,6 +207,8 @@ export const listItems = sqliteTable("list_items", {
     .references(() => lists.id, { onDelete: "cascade" }),
   text: text("text").notNull(),
   checked: integer("checked", { mode: "boolean" }).notNull().default(false),
+  checkedAt: text("checked_at"),
+  deletedAt: text("deleted_at"),
   addedBy: text("added_by"),
   createdAt: text("created_at")
     .notNull()

@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { notifyList } from "../../web/events.js";
 import { containerDb } from "../../core/container-db.js";
 import { numParam, readJson, requireCap, respond } from "../../web/helpers.js";
+import { ensureListItemsColumns } from "./list-items-columns.js";
 import * as core from "../../core/lists.js";
 
 async function migrate(db) {
@@ -21,6 +22,8 @@ async function migrate(db) {
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
   `);
+
+  await ensureListItemsColumns(db);
 
   // Seed a default "Groceries" list if none exist yet
   const count = (await db.prepare("SELECT COUNT(*) AS c FROM lists").get()).c;
@@ -81,4 +84,14 @@ export default {
   navLabel: "Lists",
   migrate,
   app,
+  jobs: [
+    {
+      name: "auto-delete-checked-items",
+      intervalMs: 60 * 60 * 1000,
+      run: async () => {
+        const removed = await core.autoDeleteCheckedItems(containerDb);
+        if (removed > 0) notifyList();
+      },
+    },
+  ],
 };

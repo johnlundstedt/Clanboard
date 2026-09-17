@@ -88,6 +88,14 @@ input:focus, select:focus, textarea:focus {
 }
 .pfield-toggle:hover { color: var(--text); }
 
+/* Store logo in a list/shopping-list header */
+.list-logo {
+  border-radius: 4px;
+  object-fit: contain;
+  background: #fff;
+  flex-shrink: 0;
+}
+
 .card {
   background: var(--surface);
   border: 1px solid var(--border);

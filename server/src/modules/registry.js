@@ -57,6 +57,24 @@ export function mountModules(parent, opts = {}) {
   }
 }
 
+// Run every module's background jobs once, on demand. The Workers `scheduled`
+// entry uses this instead of the container's in-proc timers, so both backends
+// share the exact same job definitions. Each job is guarded by its module's
+// enabled flag (matching startModuleJobs) and failures never take down a
+// sibling job.
+export async function runModuleJobs() {
+  for (const mod of modules) {
+    if (!(await isModuleEnabled(activeDb, mod.name))) continue;
+    for (const job of mod.jobs || []) {
+      try {
+        await job.run();
+      } catch (err) {
+        console.error(`[${mod.name}/${job.name}]`, err);
+      }
+    }
+  }
+}
+
 export function startModuleJobs() {
   for (const mod of modules) {
     for (const job of mod.jobs || []) {

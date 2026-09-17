@@ -38,13 +38,13 @@ import { initContainerDb, containerDb } from "./core/container-db.js";
 import { hashPassword, memberEnabledModules, publicUser } from "./core/auth.js";
 import { initEmailConfig } from "./core/email.js";
 import { initCalendarConfig, runSyncAll } from "./core/calendar.js";
-import { materializeTaskOccurrences } from "./core/tasks.js";
 import { users } from "./schema.js";
 import {
   registerModule,
   initModules,
   mountModules,
   listModulesStatus,
+  runModuleJobs,
 } from "./modules/registry.js";
 import authModule from "./modules/auth/index.js";
 import listsModule from "./modules/lists/index.js";
@@ -288,12 +288,14 @@ export default {
   },
 
   // Cron-triggered background work. The container runs module jobs on in-proc
-  // timers; here the calendar sync and task-instance materialization (the only
-  // background jobs today) run on a schedule instead. Guards as a no-op while
-  // there are no calendar connections.
+  // timers; here they run on a schedule instead via runModuleJobs (this cron is
+  // 15-minutely, so the tasks list's 30-min materialize just runs more often,
+  // and the lists module's hourly auto-delete runs fine too). Calendar sync
+  // stays explicit; it's the one job without a module-jobs entry. Guards as a
+  // no-op while there are no calendar connections.
   async scheduled(controller: ScheduledController, env: Env): Promise<void> {
     await ensureApp(env);
-    await Promise.all([runSyncAll(containerDb), materializeTaskOccurrences(containerDb)]);
+    await Promise.all([runSyncAll(containerDb), runModuleJobs()]);
     controller.noRetry();
   },
 };

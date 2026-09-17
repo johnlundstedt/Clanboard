@@ -1,7 +1,8 @@
 import { useState } from "react";
-import { SlidersHorizontal, ListChecks, UserCog, Users, Calendar } from "lucide-react";
+import { SlidersHorizontal, ListChecks, ShoppingCart, UserCog, Users, Calendar } from "lucide-react";
 import BasicSettingsPanel from "./BasicSettingsPanel.jsx";
 import TasksAdminPanel from "./TasksAdminPanel.jsx";
+import ListsAdminPanel from "./ListsAdminPanel.jsx";
 import RolesPanel from "./RolesPanel.jsx";
 import MembersPanel from "./MembersPanel.jsx";
 import CalendarAdmin from "../calendar/CalendarAdmin.jsx";
@@ -20,6 +21,13 @@ const SECTIONS = [
     icon: ListChecks,
     desc: "Task categories, priorities, and optional dollar values.",
     component: TasksAdminPanel,
+  },
+  {
+    key: "lists",
+    label: "Lists",
+    icon: ShoppingCart,
+    desc: "Automatic removal of checked items after a set time.",
+    component: ListsAdminPanel,
   },
   {
     key: "roles",

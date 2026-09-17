@@ -3,6 +3,7 @@ import {
   getLists, createList, deleteList, addListItem, toggleListItem, deleteListItem,
 } from "../../api.js";
 import { usePolling } from "../../realtime.js";
+import { storeLogoUrl } from "./storeLogos.js";
 
 export default function ListsPage({ user }) {
   const [lists, setLists] = useState([]);
@@ -101,7 +102,19 @@ export default function ListsPage({ user }) {
           return (
             <div key={list.id} className="card">
               <div className="row" style={{ justifyContent: "space-between", marginBottom: "0.5rem" }}>
-                <h2 style={{ margin: 0, fontSize: "1.25rem" }}>{list.name}</h2>
+                <div className="row">
+                  {storeLogoUrl(list.name) && (
+                    <img
+                      className="list-logo"
+                      src={storeLogoUrl(list.name)}
+                      width={26}
+                      height={26}
+                      alt=""
+                      onError={(e) => { e.currentTarget.style.display = "none"; }}
+                    />
+                  )}
+                  <h2 style={{ margin: 0, fontSize: "1.25rem" }}>{list.name}</h2>
+                </div>
                 {canDeleteLists && <button className="small danger" onClick={() => handleDeleteList(list)}>Delete</button>}
               </div>
 

@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import * as s from "../src/schema.js";
 import * as meals from "../src/core/mealplan.js";
 import * as listsCore from "../src/core/lists.js";
@@ -169,6 +169,73 @@ for (const backend of backends) {
       await listsCore.addItem(db.db, list.id, "Milk");
       await listsCore.deleteList(db.db, list.id);
       expect(await listsCore.listLists(db.db)).toEqual([]);
+    });
+
+    it("toggleItem stamps checked_at on check and clears it on uncheck", async () => {
+      const list = await listsCore.createList(db.db, "Groceries");
+      const item = await listsCore.addItem(db.db, list.id, "Milk");
+
+      await listsCore.toggleItem(db.db, item.id, true);
+      const [checked] = await db.queryAll("SELECT * FROM list_items WHERE id = " + item.id);
+      expect(checked.checked_at).toBeTruthy();
+
+      await listsCore.toggleItem(db.db, item.id, false);
+      const [unchecked] = await db.queryAll("SELECT * FROM list_items WHERE id = " + item.id);
+      expect(unchecked.checked_at).toBeNull();
+    });
+
+    it("deleteCheckedItemsOlderThan soft-deletes only stale checked items", async () => {
+      const list = await listsCore.createList(db.db, "Groceries");
+      const stale = await listsCore.addItem(db.db, list.id, "Stale");
+      const fresh = await listsCore.addItem(db.db, list.id, "Fresh");
+      const open = await listsCore.addItem(db.db, list.id, "Open");
+
+      await listsCore.toggleItem(db.db, stale.id, true);
+      await listsCore.toggleItem(db.db, fresh.id, true);
+      await db.db
+        .update(s.listItems)
+        .set({ checkedAt: sql`datetime('now', '-2 hours')` })
+        .where(eq(s.listItems.id, stale.id))
+        .run();
+
+      const removed = await listsCore.deleteCheckedItemsOlderThan(db.db, 60);
+      expect(removed).toBe(1);
+
+      const all = await listsCore.listLists(db.db);
+      expect(all[0].items!.map((i) => i.text)).toEqual(["Fresh", "Open"]);
+
+      // Tombstoned, not hard-deleted: the row is still in the table.
+      const [row] = await db.queryAll("SELECT * FROM list_items WHERE id = " + stale.id);
+      expect(row.deleted_at).toBeTruthy();
+    });
+
+    it("autoDeleteCheckedItems respects the admin setting + threshold", async () => {
+      const list = await listsCore.createList(db.db, "Groceries");
+      const item = await listsCore.addItem(db.db, list.id, "Milk");
+      await listsCore.toggleItem(db.db, item.id, true);
+      await db.db
+        .update(s.listItems)
+        .set({ checkedAt: sql`datetime('now', '-2 hours')` })
+        .where(eq(s.listItems.id, item.id))
+        .run();
+
+      // Disabled by default → no-op.
+      expect(await listsCore.autoDeleteCheckedItems(db.db)).toBe(0);
+
+      await db.db
+        .insert(s.settings)
+        .values({ key: "lists_autodelete_enabled", value: "1" })
+        .onConflictDoUpdate({ target: s.settings.key, set: { value: "1" } })
+        .run();
+      await db.db
+        .insert(s.settings)
+        .values({ key: "lists_autodelete_minutes", value: "60" })
+        .onConflictDoUpdate({ target: s.settings.key, set: { value: "60" } })
+        .run();
+
+      expect(await listsCore.autoDeleteCheckedItems(db.db)).toBe(1);
+      const all = await listsCore.listLists(db.db);
+      expect(all[0].items).toEqual([]);
     });
   });
 }

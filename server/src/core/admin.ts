@@ -154,6 +154,8 @@ export interface AdminSettings {
   tasks_enable_categories: boolean;
   tasks_enable_priorities: boolean;
   tasks_enable_dollar: boolean;
+  lists_autodelete_enabled: boolean;
+  lists_autodelete_minutes: number;
   email_configured: boolean;
   site_url: string | null;
 }
@@ -168,6 +170,8 @@ export async function getAdminSettings(db: DbClient): Promise<AdminSettings> {
     tasks_enable_categories: (await getSetting(db, "tasks_enable_categories")) !== "0",
     tasks_enable_priorities: (await getSetting(db, "tasks_enable_priorities")) !== "0",
     tasks_enable_dollar: (await getSetting(db, "tasks_enable_dollar")) === "1",
+    lists_autodelete_enabled: (await getSetting(db, "lists_autodelete_enabled")) === "1",
+    lists_autodelete_minutes: Number(await getSetting(db, "lists_autodelete_minutes")) || 60,
     email_configured: await emailConfigured(db),
     site_url: await getSetting(db, "site_url"),
   };
@@ -180,7 +184,7 @@ function flagToStorage(value: unknown, current: string | null): string | null {
 
 // Apply basic household settings. Empty lat/lon clears the value (null).
 export async function updateAdminSettings(db: DbClient, body: Partial<AdminSettings> & Record<string, unknown>) {
-  const { family_name, latitude, longitude, weather_location, weather_units, tasks_enable_categories, tasks_enable_priorities, tasks_enable_dollar, site_url } = body;
+  const { family_name, latitude, longitude, weather_location, weather_units, tasks_enable_categories, tasks_enable_priorities, tasks_enable_dollar, lists_autodelete_enabled, lists_autodelete_minutes, site_url } = body;
   if (family_name !== undefined) await setSetting(db, "family_name", String(family_name));
   if (latitude !== undefined) await setSetting(db, "latitude", latitude === "" || latitude == null ? null : String(latitude));
   if (longitude !== undefined) await setSetting(db, "longitude", longitude === "" || longitude == null ? null : String(longitude));
@@ -197,6 +201,13 @@ export async function updateAdminSettings(db: DbClient, body: Partial<AdminSetti
   }
   if (tasks_enable_dollar !== undefined) {
     await setSetting(db, "tasks_enable_dollar", flagToStorage(tasks_enable_dollar, await getSetting(db, "tasks_enable_dollar")));
+  }
+  if (lists_autodelete_enabled !== undefined) {
+    await setSetting(db, "lists_autodelete_enabled", flagToStorage(lists_autodelete_enabled, await getSetting(db, "lists_autodelete_enabled")));
+  }
+  if (lists_autodelete_minutes !== undefined) {
+    const minutes = Math.max(1, Math.floor(Number(lists_autodelete_minutes)));
+    await setSetting(db, "lists_autodelete_minutes", Number.isFinite(minutes) ? String(minutes) : "60");
   }
   if (site_url !== undefined) {
     await setSetting(db, "site_url", site_url === "" || site_url == null ? null : String(site_url).trim());
