@@ -71,6 +71,23 @@ input:focus, select:focus, textarea:focus {
 }
 .field > input { width: 100%; padding-left: 2.2rem; }
 
+/* Password show/hide toggle */
+.pfield-toggle {
+  position: absolute;
+  right: 0.5rem;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  padding: 0.25rem;
+  z-index: 1;
+}
+.pfield-toggle:hover { color: var(--text); }
+
 .card {
   background: var(--surface);
   border: 1px solid var(--border);

@@ -6,6 +6,7 @@ import { ensureRealtime, usePolling } from "./realtime.js";
 import KioskShell from "./KioskShell.jsx";
 import Logo from "./components/Logo.jsx";
 import Avatar from "./components/Avatar.jsx";
+import PasswordInput from "./components/PasswordInput.jsx";
 
 function todayStr() {
   const d = new Date();
@@ -218,10 +219,7 @@ function LoginScreen({ onLogin }) {
                 <User size={18} className="field-icon" />
                 <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Name" autoFocus autoComplete="username" />
               </div>
-              <div className="field">
-                <Lock size={18} className="field-icon" />
-                <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Password" autoComplete="current-password" />
-              </div>
+              <PasswordInput leftIcon={<Lock size={18} />} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Password" autoComplete="current-password" />
               {error && <p className="small" style={{ color: "var(--red)", margin: 0 }}>{error}</p>}
               <button className="primary" type="submit" disabled={busy} style={{ marginBottom: "1.25rem" }}>{busy ? "Signing in…" : "Sign in"}</button>
               <button type="button" className="small" style={{ background: "none", border: "none", color: "var(--muted)", cursor: "pointer" }} onClick={() => { setMode("forgot"); setError(""); setPassword(""); }}>
@@ -273,18 +271,9 @@ function SetPasswordScreen({ user, onDone }) {
           At least 8 characters, with an uppercase letter, a lowercase letter, and a symbol.
         </p>
         <div style={{ display: "grid", gap: "0.6rem" }}>
-          <div className="field">
-            <Lock size={18} className="field-icon" />
-            <input type="password" value={current} onChange={(e) => setCurrent(e.target.value)} placeholder="Temporary password" autoFocus autoComplete="current-password" />
-          </div>
-          <div className="field">
-            <Lock size={18} className="field-icon" />
-            <input type="password" value={next} onChange={(e) => setNext(e.target.value)} placeholder="New password" autoComplete="new-password" />
-          </div>
-          <div className="field">
-            <Lock size={18} className="field-icon" />
-            <input type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} placeholder="Repeat new password" autoComplete="new-password" />
-          </div>
+          <PasswordInput leftIcon={<Lock size={18} />} value={current} onChange={(e) => setCurrent(e.target.value)} placeholder="Temporary password" autoFocus autoComplete="current-password" />
+          <PasswordInput leftIcon={<Lock size={18} />} value={next} onChange={(e) => setNext(e.target.value)} placeholder="New password" autoComplete="new-password" />
+          <PasswordInput leftIcon={<Lock size={18} />} value={confirm} onChange={(e) => setConfirm(e.target.value)} placeholder="Repeat new password" autoComplete="new-password" />
           {error && <p className="small" style={{ color: "var(--red)", margin: 0 }}>{error}</p>}
           <button className="primary" type="submit" disabled={busy} style={{ marginBottom: "1.25rem" }}>{busy ? "Saving…" : "Save new password"}</button>
         </div>

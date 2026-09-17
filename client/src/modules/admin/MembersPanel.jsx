@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Avatar from "../../components/Avatar.jsx";
+import PasswordInput from "../../components/PasswordInput.jsx";
 import {
   getMembers, createMember, updateMember, deleteMember, unlockMember, resetMemberPassword, uploadPhoto,
   getRoles,
@@ -345,9 +346,8 @@ function MemberForm({ roles, initial, onCancel, onSaved }) {
       </div>
 
       <div className="row">
-        <input
+        <PasswordInput
           style={{ width: "25rem", maxWidth: "100%" }}
-          type="password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           placeholder={initial ? "New password (leave blank to keep)" : "Password (blank = no login)"}
