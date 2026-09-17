@@ -297,6 +297,7 @@ input:focus, select:focus, textarea:focus {
   line-height: 18px;
   text-align: center;
   pointer-events: none;
+  z-index: 1;
 }
 .nav .spacer { flex: 1; }
 
