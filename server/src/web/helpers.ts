@@ -28,6 +28,11 @@ export function toAuthRow(r: Record<string, unknown> | undefined | null): AuthUs
     is_kiosk: r.isKiosk as boolean | number,
     system_account: r.systemAccount as boolean | number,
     password_hash: (r.passwordHash as string) ?? null,
+    email: (r.email as string) ?? null,
+    login_enabled: r.loginEnabled as boolean | number,
+    failed_attempts: (r.failedAttempts as number) ?? 0,
+    locked: r.locked as boolean | number,
+    must_change_password: r.mustChangePassword as boolean | number,
   };
 }
 

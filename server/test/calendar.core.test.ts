@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import * as s from "../src/schema.js";
 import * as calendar from "../src/core/calendar.js";
 import type { ConnectionWire } from "../src/core/calendar.js";
@@ -134,6 +134,78 @@ for (const backend of backends) {
       });
     });
 
+    describe("config key fallback", () => {
+      beforeEach(() => calendar.initCalendarConfig({ googleApiKey: null }));
+      afterEach(() => calendar.initCalendarConfig({ googleApiKey: null }));
+
+      it("prefers a connection's own key over deployment config", () => {
+        calendar.initCalendarConfig({ googleApiKey: "cfg-key" });
+        expect(calendar.resolveApiKey({ api_key: "conn-key" })).toBe("conn-key");
+        expect(calendar.resolveApiKey({ api_key: null })).toBe("cfg-key");
+        expect(calendar.resolveApiKey({ api_key: "" })).toBe("cfg-key");
+        calendar.initCalendarConfig({ googleApiKey: null });
+        expect(calendar.resolveApiKey({ api_key: null })).toBeNull();
+      });
+
+      it("uses the configured Google API key when the connection has none", async () => {
+        const realFetch = globalThis.fetch;
+        const urls: string[] = [];
+        vi.stubGlobal(
+          "fetch",
+          (async (input: string | URL | Request) => {
+            urls.push(String(input));
+            return new Response(JSON.stringify({ items: [] }), {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            });
+          }) as typeof fetch
+        );
+        try {
+          calendar.initCalendarConfig({ googleApiKey: "cfg-key" });
+          const conn = await calendar.createConnection(db.db, {
+            calendar_id: "family@group.calendar.google.com",
+          });
+          const result = (await calendar.syncConnection(db.db, conn as ConnectionWire)) as {
+            inserted: number;
+          };
+          expect(result.inserted).toBe(0);
+          expect(urls).toHaveLength(1);
+          expect(new URL(urls[0]).searchParams.get("key")).toBe("cfg-key");
+        } finally {
+          vi.unstubAllGlobals();
+          globalThis.fetch = realFetch;
+        }
+      });
+
+      it("a connection's own key beats the config key in the sync request", async () => {
+        const realFetch = globalThis.fetch;
+        const urls: string[] = [];
+        vi.stubGlobal(
+          "fetch",
+          (async (input: string | URL | Request) => {
+            urls.push(String(input));
+            return new Response(JSON.stringify({ items: [] }), {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            });
+          }) as typeof fetch
+        );
+        try {
+          calendar.initCalendarConfig({ googleApiKey: "cfg-key" });
+          const conn = await calendar.createConnection(db.db, {
+            calendar_id: "family@group.calendar.google.com",
+            api_key: "conn-key",
+          });
+          await calendar.syncConnection(db.db, conn as ConnectionWire);
+          expect(urls).toHaveLength(1);
+          expect(new URL(urls[0]).searchParams.get("key")).toBe("conn-key");
+        } finally {
+          vi.unstubAllGlobals();
+          globalThis.fetch = realFetch;
+        }
+      });
+    });
+
     describe("getEvents", () => {
       it("joins cache to connections, applies the window, and hides disabled calendars", async () => {
         const on = await calendar.createConnection(db.db, {
@@ -202,6 +274,94 @@ for (const backend of backends) {
         expect(result.counts[0].skipped).toBe(0);
         expect(result.errors).toHaveLength(1);
         void off;
+      });
+    });
+
+    describe("sync status", () => {
+      beforeEach(() => calendar.initCalendarConfig({ googleApiKey: "cfg-key" }));
+      afterEach(() => calendar.initCalendarConfig({ googleApiKey: null }));
+
+      it("records last_synced_at and clears the error on success", async () => {
+        const realFetch = globalThis.fetch;
+        vi.stubGlobal(
+          "fetch",
+          (async () =>
+            new Response(JSON.stringify({ items: [] }), {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            })) as typeof fetch
+        );
+        try {
+          const conn = await calendar.createConnection(db.db, {
+            calendar_id: "family@group.calendar.google.com",
+          });
+          await calendar.syncConnection(db.db, conn as ConnectionWire);
+          const [row] = await calendar.listConnections(db.db);
+          expect(row.last_synced_at).toBeTruthy();
+          expect(row.last_sync_error).toBeNull();
+        } finally {
+          vi.unstubAllGlobals();
+          globalThis.fetch = realFetch;
+        }
+      });
+
+      it("persists the failure message on a sync error and recovers afterwards", async () => {
+        const realFetch = globalThis.fetch;
+        const fail = (async () => new Response("not found", { status: 404 })) as typeof fetch;
+        const succeed = (async () =>
+          new Response(JSON.stringify({ items: [] }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          })) as typeof fetch;
+        try {
+          const conn = await calendar.createConnection(db.db, {
+            calendar_id: "family@group.calendar.google.com",
+          });
+
+          vi.stubGlobal("fetch", fail);
+          await calendar.syncConnection(db.db, conn as ConnectionWire);
+          let [row] = await calendar.listConnections(db.db);
+          expect(row.last_sync_error).toContain("Google Calendar 404");
+          expect(row.last_synced_at).toBeNull();
+
+          vi.stubGlobal("fetch", succeed);
+          await calendar.syncConnection(db.db, conn as ConnectionWire);
+          [row] = await calendar.listConnections(db.db);
+          expect(row.last_sync_error).toBeNull();
+          expect(row.last_synced_at).toBeTruthy();
+        } finally {
+          vi.unstubAllGlobals();
+          globalThis.fetch = realFetch;
+        }
+      });
+
+      it("disabled connections keep their status and are never fetched", async () => {
+        const realFetch = globalThis.fetch;
+        let fetched = 0;
+        vi.stubGlobal(
+          "fetch",
+          (async () => {
+            fetched += 1;
+            return new Response(JSON.stringify({ items: [] }), {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            });
+          }) as typeof fetch
+        );
+        try {
+          const conn = await calendar.createConnection(db.db, {
+            calendar_id: "family@group.calendar.google.com",
+          });
+          await calendar.syncConnection(db.db, conn as ConnectionWire);
+          await calendar.updateConnection(db.db, conn.id, { enabled: false });
+          const result = await calendar.syncConnection(db.db, (await calendar.listConnections(db.db))[0]);
+          expect(result.skipped).toBe(0);
+          expect(await calendar.runSyncAll(db.db)).toEqual({ counts: [], errors: [] });
+          expect(fetched).toBe(1);
+        } finally {
+          vi.unstubAllGlobals();
+          globalThis.fetch = realFetch;
+        }
       });
     });
   });

@@ -98,9 +98,9 @@ export default function CalendarPage() {
 
   let rangeLabel;
   if (view === "day") {
-    rangeLabel = anchor.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric", year: "numeric" });
+    rangeLabel = anchor.toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric", year: "numeric" });
   } else if (view === "month") {
-    rangeLabel = start.toLocaleDateString(undefined, { month: "long", year: "numeric" });
+    rangeLabel = start.toLocaleDateString(undefined, { month: "short", year: "numeric" });
   } else {
     rangeLabel = `${fmtDate(start).slice(5).replace("-", "/")} – ${fmtDate(addDays(start, 6)).slice(5).replace("-", "/")}`;
   }

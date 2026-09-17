@@ -120,6 +120,24 @@ app.patch("/members/:id", (c) =>
   })
 );
 
+// Clear a locked account so the member can sign in again.
+app.post("/members/:id/unlock", (c) =>
+  respond(c, async () => {
+    const user = await core.unlockMember(containerDb, numParam(c, "id"));
+    notifyUsers();
+    return user;
+  })
+);
+
+// Issue a fresh temporary password, mail it, and force a change on sign-in.
+app.post("/members/:id/reset-password", (c) =>
+  respond(c, async () => {
+    const user = await core.resetMemberPassword(containerDb, numParam(c, "id"));
+    notifyUsers();
+    return user;
+  })
+);
+
 // --- Per-member module access -------------------------------------------------
 app.get("/members/:id/modules", (c) =>
   respond(c, async () => {

@@ -41,6 +41,15 @@ export const users = sqliteTable("users", {
     .notNull()
     .default(false),
   passwordHash: text("password_hash"),
+  email: text("email"),
+  loginEnabled: integer("login_enabled", { mode: "boolean" })
+    .notNull()
+    .default(false),
+  failedAttempts: integer("failed_attempts").notNull().default(0),
+  locked: integer("locked", { mode: "boolean" }).notNull().default(false),
+  mustChangePassword: integer("must_change_password", { mode: "boolean" })
+    .notNull()
+    .default(false),
   createdAt: text("created_at")
     .notNull()
     .default(sql`(datetime('now'))`),
@@ -157,6 +166,28 @@ export const taskAssignees = sqliteTable(
   ]
 );
 
+// One row per scheduled instance of a repeating task. A job materializes
+// instances ahead of time (pending, completed_at NULL), and completing one
+// marks its own instance. The tasks table keeps a single rolling row for the
+// current/next instance while these rows keep the per-day audit — completed
+// AND skipped occurrences — so past instances can be reviewed later.
+export const taskOccurrences = sqliteTable(
+  "task_occurrences",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    taskId: integer("task_id")
+      .notNull()
+      .references(() => tasks.id, { onDelete: "cascade" }),
+    occurrenceDate: text("occurrence_date").notNull(),
+    completedAt: text("completed_at"),
+    completedBy: integer("completed_by").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    reviewedAt: text("reviewed_at"),
+  },
+  (t) => [uniqueIndex("idx_task_occurrences_task_date").on(t.taskId, t.occurrenceDate)]
+);
+
 // ---------------------------------------------------------------------------
 // Lists
 // ---------------------------------------------------------------------------
@@ -215,6 +246,8 @@ export const calendarConnections = sqliteTable("calendar_connections", {
   createdAt: text("created_at")
     .notNull()
     .default(sql`(datetime('now'))`),
+  lastSyncedAt: text("last_synced_at"),
+  lastSyncError: text("last_sync_error"),
 });
 
 export const calendarCache = sqliteTable(

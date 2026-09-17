@@ -9,6 +9,8 @@ import { drizzle as drizzleFromSqlite } from "drizzle-orm/better-sqlite3";
 import { db, memberEnabledModules } from "./db.js";
 import { containerDb, initContainerDb } from "./core/container-db.js";
 import { publicUser } from "./core/auth.js";
+import { initEmailConfig } from "./core/email.js";
+import { initCalendarConfig } from "./core/calendar.js";
 import { createFsStorage } from "./core/storage-fs.js";
 import { createSecurity } from "./web/helpers.js";
 import { initSecurity } from "./web/security.js";
@@ -66,6 +68,9 @@ await initModules(drizzleDb, db);
 const secret = process.env.SESSION_SECRET || "clanboard-dev-secret-change-me";
 const security = createSecurity(drizzleDb, secret, process.env.NODE_ENV === "production");
 initSecurity(security);
+
+initEmailConfig({ resendApiKey: process.env.RESEND_API_KEY ?? null });
+initCalendarConfig({ googleApiKey: process.env.GOOGLE_API_KEY ?? null });
 
 const app = new Hono();
 

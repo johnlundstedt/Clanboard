@@ -38,6 +38,12 @@ export function mountModules(parent, opts = {}) {
     if (!mod.app) continue;
     const guard = guards[mod.name];
     const sub = new Hono();
+    // Remember the viewer's IANA timezone (sent by the client as X-Timezone) so
+    // date-sensitive handlers compute "today" locally instead of on UTC.
+    sub.use("*", (c, next) => {
+      c.set("timezone", c.req.header("x-timezone") || "");
+      return next();
+    });
     if (authenticated) sub.use("*", authenticated);
     sub.use("*", async (c, next) => {
       if (!(await isModuleEnabled(activeDb, mod.name))) {

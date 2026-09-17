@@ -44,10 +44,10 @@ export default function DashboardPage({ user, memberId, member }) {
     setData(await getDashboard(memberId || undefined));
   }, [memberId]);
 
-  usePolling("dashboard", refresh, 60000);
-  usePolling("meal_plan", refresh, 60000);
-  usePolling("tasks", refresh, 10000);
-  usePolling("users", refresh, 10000);
+  // The dashboard aggregates tasks, users, meals and its own counters, so it
+  // refreshes on any change to those tables (single shared poller, not four
+  // independent timers hitting /api/dashboard on a schedule).
+  usePolling(["dashboard", "meal_plan", "tasks", "users"], refresh);
 
   useEffect(() => { refresh(); }, [refresh]);
 
@@ -84,24 +84,22 @@ export default function DashboardPage({ user, memberId, member }) {
       <div className="row wrap" style={{ justifyContent: "space-between", marginBottom: "1rem" }}>
         <h1 style={{ margin: 0 }}>Hi, {memberName}</h1>
         <span className="muted">
-          {today ? new Date(`${today}T12:00:00`).toLocaleDateString(undefined, { weekday: "long", year: "numeric", month: "long", day: "numeric" }) : ""}
+          {today ? new Date(`${today}T12:00:00`).toLocaleDateString(undefined, { weekday: "long", year: "numeric", month: "short", day: "numeric" }) : ""}
         </span>
       </div>
 
       {/* Weather */}
       {data.weather && data.weather.length > 0 && (
         <div className="card" style={{ marginBottom: "1rem" }}>
-          <div className="row wrap">
+          <div className="weather-strip">
             {[data.weather[0], ...data.weather.slice(1, 3)].map((day, i) => (
-              <div key={day.date} className="row" style={{ gap: "0.75rem", padding: "0 1rem 0 0" }}>
-                <span style={{ fontSize: "1.4rem" }}>{day.icon}</span>
+              <div key={day.date} className="weather-day">
+                <div className="weather-icon">{day.icon}</div>
+                <div className="muted small">
+                  {i === 0 ? "Today" : WEEKDAYS[new Date(`${day.date}T12:00:00`).getDay()]}
+                </div>
                 <div>
-                  <div className={i === 0 ? "" : "muted small"}>
-                    {i === 0 ? "Today" : WEEKDAYS[new Date(`${day.date}T12:00:00`).getDay()]}
-                  </div>
-                  <div>
-                    {formatTemp(day, "max")} / {formatTemp(day, "min")} {day.label}
-                  </div>
+                  {formatTemp(day, "max")} / {formatTemp(day, "min")}
                 </div>
               </div>
             ))}

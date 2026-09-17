@@ -55,6 +55,11 @@ function snakeUserRow(u: typeof s.users.$inferSelect): auth.AuthUserRow {
     is_kiosk: u.isKiosk,
     system_account: u.systemAccount,
     password_hash: u.passwordHash,
+    email: u.email,
+    login_enabled: u.loginEnabled,
+    failed_attempts: u.failedAttempts,
+    locked: u.locked,
+    must_change_password: u.mustChangePassword,
   };
 }
 
@@ -148,6 +153,11 @@ for (const backend of backends) {
         is_admin: false,
         is_kiosk: false,
         system_account: false,
+        email: null,
+        login_enabled: false,
+        failed_attempts: 0,
+        locked: false,
+        must_change_password: false,
       });
       expect(JSON.stringify(row)).not.toContain("irrelevant");
       expect(auth.publicUser(null)).toBeNull();
@@ -169,7 +179,9 @@ for (const backend of backends) {
         "tasks",
       ]);
       expect(me.caps).toEqual(fullCapabilities());
-      expect(JSON.stringify(me)).not.toContain("password");
+      expect(JSON.stringify(me)).not.toContain("secret");
+      expect(me).not.toHaveProperty("password_hash");
+      expect(me).not.toHaveProperty("passwordHash");
     });
 
     it("getMePayload falls back to the default family name", async () => {

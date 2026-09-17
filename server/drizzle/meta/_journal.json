@@ -8,6 +8,27 @@
       "when": 1789104632696,
       "tag": "0000_overconfident_hellcat",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1789349324314,
+      "tag": "0001_wooden_goblin_queen",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1789357675697,
+      "tag": "0002_heavy_imperial_guard",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1789439248431,
+      "tag": "0003_confused_captain_midlands",
+      "breakpoints": true
     }
   ]
 }

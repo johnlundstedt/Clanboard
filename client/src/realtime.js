@@ -1,67 +1,95 @@
 import { useEffect } from "react";
 
-// Lightweight WebSocket client with a table-keyed subscription bus.
-// If the socket can't connect, pages just fall back to their own polling/manual refreshes.
+// Change-driven realtime layer. The server keeps a global change log behind
+// /api/changes (same code on the Node container and the Cloudflare Worker) —
+// every state mutation records which table it touched. This module short-polls
+// that endpoint with a revision cursor and dispatches per-table events, so
+// subscribers refresh ONLY when something they care about actually changed,
+// never on a timer. There is exactly one poller regardless of how many
+// components subscribe (a page subscribing to N tables previously started N
+// independent timers, hammering endpoints like /api/dashboard every few
+// seconds).
 
 const listeners = new Map(); // table -> Set<cb>
-let socket = null;
-let reconnectTimer = null;
+const POLL_MS = 10000;
+let pollTimer = null;
+let cursor = null; // { rev, epoch } from the server's change log
 
-function notify(table) {
+function dispatch(table) {
   const cbs = listeners.get(table);
   if (cbs) for (const cb of [...cbs]) cb();
 }
 
-function connect() {
-  const proto = location.protocol === "https:" ? "wss:" : "ws:";
-  socket = new WebSocket(`${proto}//${location.host}/ws`);
-
-  socket.onmessage = (e) => {
-    try {
-      const msg = JSON.parse(e.data);
-      if (msg.type === "change" && msg.table) notify(msg.table);
-    } catch {
-      /* ignore malformed */
-    }
-  };
-
-  socket.onclose = () => {
-    socket = null;
-    clearTimeout(reconnectTimer);
-    reconnectTimer = setTimeout(connect, 5000);
-  };
-  socket.onerror = () => socket?.close();
+function notifyAll() {
+  for (const table of listeners.keys()) dispatch(table);
 }
 
-function ensureConnected() {
-  if (!socket || socket.readyState > 1) connect();
+async function pollOnce() {
+  try {
+    const qs = cursor ? `?since=${cursor.rev}&epoch=${cursor.epoch}` : "";
+    const res = await fetch(`/api/changes${qs}`);
+    if (!res.ok) return;
+    const snap = await res.json();
+    cursor = { rev: snap.rev, epoch: snap.epoch };
+    const tables = snap.tables;
+    if (tables === "*") notifyAll();
+    else for (const t of tables) notify(t);
+  } catch {
+    /* offline or not signed in — try again next tick */
+  }
 }
 
-export function ensureRealtime() {
-  ensureConnected();
+function startPolling() {
+  if (!pollTimer) {
+    pollOnce();
+    pollTimer = setInterval(pollOnce, POLL_MS);
+  }
+}
+
+function stopPolling() {
+  clearInterval(pollTimer);
+  pollTimer = null;
+}
+
+// Start the shared poller while anyone is subscribed, stop it when the last
+// subscriber leaves (e.g. on the login screen nothing polls).
+function syncPolling() {
+  const any = [...listeners.values()].some((s) => s.size > 0);
+  if (any) startPolling();
+  else stopPolling();
 }
 
 export function subscribe(table, cb) {
-  ensureConnected();
   if (!listeners.has(table)) listeners.set(table, new Set());
   const set = listeners.get(table);
   set.add(cb);
-  return () => set.delete(cb);
+  syncPolling();
+  return () => {
+    set.delete(cb);
+    if (set.size === 0) listeners.delete(table);
+    syncPolling();
+  };
 }
 
-// Subscribe a refresh callback to a table; calls cb when a change broadcast arrives.
-export function useRealtime(table, refresh) {
-  useEffect(() => subscribe(table, refresh), [table, refresh]);
-}
-
-// Fallback: poll every `intervalMs` while the socket isn't connected.
-export function usePolling(table, refresh, intervalMs = 10000) {
-  useRealtime(table, refresh);
+// Subscribe a refresh callback to a table (or list of tables); calls it when a
+// change for that table arrives. Eat an empty initial refresh at mount.
+export function useRealtime(tables, refresh) {
+  const list = Array.isArray(tables) ? tables : [tables];
+  const key = list.join(",");
   useEffect(() => {
-    const id = setInterval(() => {
-      if (!socket || socket.readyState !== 1) refresh();
-    }, intervalMs);
-    return () => clearInterval(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [table, refresh, intervalMs]);
+    const offs = list.map((t) => subscribe(t, refresh));
+    return () => offs.forEach((off) => off());
+  }, [key, refresh]);
 }
+
+// Change-driven edition of `usePolling`: subscribes `refresh` to `table` (or a
+// list of tables) instead of starting a per-subscription timer. The interval
+// argument is accepted for call-site compatibility and ignored — refreshing on
+// a schedule caused the constant server traffic this replaces.
+export function usePolling(tables, refresh, _intervalMs) {
+  useRealtime(tables, refresh);
+}
+
+// Kept as a no-op for compatibility — polling is driven by the subscriptions
+// themselves, not by an explicit connect call.
+export function ensureRealtime() {}

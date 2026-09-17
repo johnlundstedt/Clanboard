@@ -4,6 +4,7 @@ import { containerDb } from "../../core/container-db.js";
 import { numParam, readJson, requireCap, respond } from "../../web/helpers.js";
 import { requireAdmin } from "../../web/security.js";
 import * as core from "../../core/tasks.js";
+import { ensureTaskOccurrencesTable } from "./task-occurrences-table.js";
 
 async function migrate(db) {
   await db.exec(`
@@ -55,6 +56,11 @@ async function migrate(db) {
     );
     CREATE INDEX IF NOT EXISTS idx_task_assignees_user ON task_assignees(user_id);
   `);
+
+  // Per-instance audit table for repeating tasks: one row per scheduled
+  // occurrence, materialized ahead of time, plus a guarded in-place rebuild of
+  // legacy NOT NULL completed_at columns (see task-occurrences-table.js).
+  await ensureTaskOccurrencesTable(db);
 
   const cols = (await db.prepare("PRAGMA table_info(tasks)").all()).map((c) => c.name);
 
@@ -220,7 +226,7 @@ app.delete("/priorities/:id", requireAdmin, (c) =>
 // List all tasks, optionally filtered to a single member's assignments
 // via ?user_id= (wall-display member view).
 app.get("/", (c) =>
-  respond(c, () => core.listTasks(containerDb, c.get("user"), { user_id: c.req.query("user_id") }))
+  respond(c, () => core.listTasks(containerDb, c.get("user"), { user_id: c.req.query("user_id"), timezone: c.get("timezone") }))
 );
 
 // Quick-add: name only, everything else optional/filled in later.
@@ -243,7 +249,7 @@ app.post("/", requireCap(containerDb, "tasks", "create"), (c) =>
 
 app.patch("/:id/complete", (c) =>
   respond(c, async () => {
-    const out = await core.completeTask(containerDb, c.get("user"), numParam(c, "id"));
+    const out = await core.completeTask(containerDb, c.get("user"), numParam(c, "id"), c.get("timezone"));
     notifyTasks();
     return out;
   })
@@ -251,7 +257,7 @@ app.patch("/:id/complete", (c) =>
 
 app.patch("/:id/uncomplete", (c) =>
   respond(c, async () => {
-    const out = await core.uncompleteTask(containerDb, c.get("user"), numParam(c, "id"));
+    const out = await core.uncompleteTask(containerDb, c.get("user"), numParam(c, "id"), c.get("timezone"));
     notifyTasks();
     return out;
   })
@@ -259,7 +265,7 @@ app.patch("/:id/uncomplete", (c) =>
 
 app.patch("/:id/review", requireCap(containerDb, "tasks", "review"), (c) =>
   respond(c, async () => {
-    const out = await core.reviewTask(containerDb, c.get("user"), numParam(c, "id"));
+    const out = await core.reviewTask(containerDb, c.get("user"), numParam(c, "id"), c.get("timezone"));
     notifyTasks();
     return out;
   })
@@ -267,7 +273,7 @@ app.patch("/:id/review", requireCap(containerDb, "tasks", "review"), (c) =>
 
 app.patch("/:id/unreview", requireCap(containerDb, "tasks", "review"), (c) =>
   respond(c, async () => {
-    const out = await core.unreviewTask(containerDb, c.get("user"), numParam(c, "id"));
+    const out = await core.unreviewTask(containerDb, c.get("user"), numParam(c, "id"), c.get("timezone"));
     notifyTasks();
     return out;
   })
@@ -300,7 +306,15 @@ app.delete("/:id", requireCap(containerDb, "tasks", "delete"), (c) =>
 
 // Dashboard helper: tasks "due today or overdue" plus unassigned tasks.
 app.get("/today", (c) =>
-  respond(c, () => core.tasksToday(containerDb, c.req.query("date") || undefined))
+  respond(c, () =>
+    core.tasksToday(containerDb, c.req.query("date") || undefined, c.get("timezone"))
+  )
+);
+
+// Per-day instance audit: every scheduled occurrence for a date, completed or
+// not. Foundation for the "review yesterday's tasks" view.
+app.get("/history", (c) =>
+  respond(c, () => core.taskOccurrenceHistory(containerDb, c.req.query("date") || undefined, c.get("timezone")))
 );
 
 export default {
@@ -308,4 +322,11 @@ export default {
   navLabel: "Tasks",
   migrate,
   app,
+  jobs: [
+    {
+      name: "materialize-task-occurrences",
+      intervalMs: 30 * 60 * 1000,
+      run: () => core.materializeTaskOccurrences(containerDb),
+    },
+  ],
 };

@@ -20,12 +20,16 @@ export default function BasicSettingsPanel({ onSaved }) {
   const [moduleStatuses, setModuleStatuses] = useState([]);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [emailConfigured, setEmailConfigured] = useState(false);
+  const [siteUrl, setSiteUrl] = useState("");
 
   const refresh = useCallback(async () => {
     const [s, mods] = await Promise.all([getAdminSettings(), getAdminModules()]);
     setFamilyName(s.family_name || "");
     setUnits(s.weather_units || "metric");
     setModuleStatuses(mods);
+    setEmailConfigured(!!s.email_configured);
+    setSiteUrl(s.site_url || "");
   }, []);
 
   usePolling("modules", refresh);
@@ -40,6 +44,20 @@ export default function BasicSettingsPanel({ onSaved }) {
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
       onSaved?.();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function saveEmailSettings() {
+    setSaving(true);
+    try {
+      await setAdminSettings({ site_url: siteUrl });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+      onSaved?.();
+    } catch (err) {
+      alert(err.message);
     } finally {
       setSaving(false);
     }
@@ -133,6 +151,41 @@ export default function BasicSettingsPanel({ onSaved }) {
         </label>
 
         <WeatherLocation onSaved={onSaved} />
+      </div>
+
+      <div className="card">
+        <h3 style={{ marginTop: 0 }}>Member login & email</h3>
+        <div className="small muted" style={{ marginBottom: "0.6rem" }}>
+          Members sign in with their name and a password. When login is enabled
+          for a member, a temporary password is emailed from{" "}
+          <strong>no-reply@clanboard.app</strong> (add that address to your{" "}
+          <a href="https://resend.com/domains" target="_blank" rel="noreferrer">Resend</a>{" "}
+          verified domain). First sign-in forces a password change; three failed
+          attempts locks the account until a parent unlocks it.
+        </div>
+        <div style={{ marginBottom: "0.75rem" }}>
+          <span className="small muted" style={{ display: "block", marginBottom: "0.25rem" }}>Email sending (Resend)</span>
+          {emailConfigured ? (
+            <span className="badge green">Enabled — API key from deployment config</span>
+          ) : (
+            <span className="badge amber">Not configured — set the RESEND_API_KEY secret</span>
+          )}
+        </div>
+        <label style={{ display: "block", marginBottom: "0.75rem" }}>
+          <span className="small muted" style={{ display: "block", marginBottom: "0.25rem" }}>Site URL (for email links)</span>
+          <input
+            style={{ width: "26rem", maxWidth: "100%" }}
+            type="url"
+            value={siteUrl}
+            onChange={(e) => setSiteUrl(e.target.value)}
+            placeholder="https://clanboard.app"
+          />
+        </label>
+        <div className="row">
+          <button className="primary" onClick={saveEmailSettings} disabled={saving}>
+            {saving ? "Saving…" : saved ? "Saved ✓" : "Save email settings"}
+          </button>
+        </div>
       </div>
     </div>
   );

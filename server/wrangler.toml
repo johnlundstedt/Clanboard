@@ -6,9 +6,11 @@
 # www.clanboard.app are attached via Custom Domains (free plan supports static
 # assets and custom domains), DNS records are created automatically.
 #
-# Secrets (SESSION_SECRET, ADMIN_PASSWORD) are set separately with
-# `wrangler secret put` — never in this file. The 15-minute cron below drives
-# the Worker's scheduled() handler (Google Calendar sync).
+# Secrets (SESSION_SECRET, ADMIN_PASSWORD, RESEND_API_KEY, GOOGLE_API_KEY) are
+# set separately with `wrangler secret put` — never in this file. For local
+# `wrangler dev`, put them in server/.dev.vars instead (also gitignored). The
+# 15-minute cron below drives the Worker's scheduled() handler (Google Calendar
+# sync).
 name = "clanboard"
 main = "src/worker.ts"
 compatibility_date = "2025-09-02"

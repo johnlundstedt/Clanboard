@@ -88,6 +88,21 @@ if (!userCols.includes("role_id")) {
 if (!userCols.includes("nav_scope")) {
   db.exec("ALTER TABLE users ADD COLUMN nav_scope TEXT NOT NULL DEFAULT 'all'");
 }
+if (!userCols.includes("email")) {
+  db.exec("ALTER TABLE users ADD COLUMN email TEXT");
+}
+if (!userCols.includes("login_enabled")) {
+  db.exec("ALTER TABLE users ADD COLUMN login_enabled INTEGER NOT NULL DEFAULT 0");
+}
+if (!userCols.includes("failed_attempts")) {
+  db.exec("ALTER TABLE users ADD COLUMN failed_attempts INTEGER NOT NULL DEFAULT 0");
+}
+if (!userCols.includes("locked")) {
+  db.exec("ALTER TABLE users ADD COLUMN locked INTEGER NOT NULL DEFAULT 0");
+}
+if (!userCols.includes("must_change_password")) {
+  db.exec("ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0");
+}
 
 // Re-run migrations after the columns exist so any newly created tables above
 // (member_roles, role_modules) land in every database.

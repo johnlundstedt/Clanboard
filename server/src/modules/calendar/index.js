@@ -14,7 +14,9 @@ async function migrate(db) {
       api_key TEXT,                   -- optional Google API key for read-only access
       color TEXT,                     -- display color for this calendar
       enabled INTEGER NOT NULL DEFAULT 1,
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      last_synced_at TEXT,            -- ISO 8601 of the last successful sync
+      last_sync_error TEXT            -- error text of the last failed sync, cleared on success
     );
 
     CREATE TABLE IF NOT EXISTS calendar_cache (
@@ -32,6 +34,18 @@ async function migrate(db) {
     );
     CREATE INDEX IF NOT EXISTS idx_calendar_cache_start ON calendar_cache(start_at);
   `);
+
+  // Column-repair for databases created before these columns existed (older
+  // D1/sqlite files). PRAGMA table_info works on every backend; the .all()
+  // result is normalized across better-sqlite3 (array) and D1 (.results).
+  const colsRes = await db.prepare(`PRAGMA table_info("calendar_connections")`).all();
+  const cols = (Array.isArray(colsRes) ? colsRes : colsRes.results ?? []).map((c) => c.name);
+  if (!cols.includes("last_synced_at")) {
+    await db.exec("ALTER TABLE calendar_connections ADD COLUMN last_synced_at TEXT");
+  }
+  if (!cols.includes("last_sync_error")) {
+    await db.exec("ALTER TABLE calendar_connections ADD COLUMN last_sync_error TEXT");
+  }
 }
 
 const app = new Hono();

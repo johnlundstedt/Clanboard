@@ -52,7 +52,7 @@ function initialInterval(initial) {
   return Number.isInteger(n) && n > 0 ? n : 1;
 }
 
-export default function TaskForm({ members, initial, defaultAssigneeIds, onSubmit, onCancel, categories, priorities, settings }) {
+export default function TaskForm({ members, initial, defaultAssigneeIds, onSubmit, onCancel, categories, priorities, settings, canDelete, onDelete }) {
   const [name, setName] = useState(initial?.name || "");
   const [description, setDescription] = useState(initial?.description || "");
   const [categoryId, setCategoryId] = useState(initial?.category_id || "");
@@ -365,6 +365,9 @@ export default function TaskForm({ members, initial, defaultAssigneeIds, onSubmi
       <div className="row" style={{ marginTop: "0.4rem" }}>
         <button className="primary" type="submit">{initial ? "Save changes" : "Add task"}</button>
         {onCancel && <button type="button" onClick={onCancel}>Cancel</button>}
+        {initial && canDelete && (
+          <button type="button" className="danger" onClick={() => onDelete?.(initial)}>Delete task</button>
+        )}
       </div>
     </form>
   );

@@ -2,11 +2,10 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Users } from "lucide-react";
 import Avatar from "../../components/Avatar.jsx";
 import { TaskIcon } from "../../components/IconPicker.jsx";
-import AssigneeField from "../../components/AssigneeField.jsx";
 import TaskForm from "./TaskForm.jsx";
 import {
   getTasks, getMembers, createTask, updateTask, deleteTask,
-  completeTask, uncompleteTask, reviewTask, unreviewTask, assignTask,
+  completeTask, uncompleteTask, reviewTask, unreviewTask,
   getTaskSettings, getTaskCategories, getTaskPriorities,
 } from "../../api.js";
 import { usePolling } from "../../realtime.js";
@@ -16,19 +15,24 @@ function todayStr() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-const FILTERS = [
-  ["all", "All"],
-  ["today", "Due today"],
-  ["done", "Done"],
-  ["unassigned", "Unassigned"],
-];
+function addDaysStr(day, n) {
+  const d = new Date(`${day}T12:00:00`);
+  d.setDate(d.getDate() + n);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+// Whole-day difference `later` – `earlier` for YYYY-MM-DD strings.
+function daysBetween(later, earlier) {
+  const [ly, lm, ld] = later.split("-").map(Number);
+  const [ey, em, ed] = earlier.split("-").map(Number);
+  return Math.round((Date.UTC(ly, lm - 1, ld) - Date.UTC(ey, em - 1, ed)) / 86400000);
+}
 
 export default function TasksPage({ user, memberId, member }) {
   const [tasks, setTasks] = useState([]);
   const [members, setMembers] = useState([]);
   const [showingForm, setShowingForm] = useState(false);
   const [editing, setEditing] = useState(null);
-  const [filter, setFilter] = useState("all");
   const [memberFilter, setMemberFilter] = useState(null); // null = everyone
   const [categories, setCategories] = useState([]);
   const [priorities, setPriorities] = useState([]);
@@ -51,7 +55,12 @@ export default function TasksPage({ user, memberId, member }) {
 
   useEffect(() => { refresh(); }, [refresh]);
 
-  const today = todayStr();
+  // Bucket the list with the server's canonical "today" (stamped on each task
+  // by /api/tasks) — the same day that drives the schedules and due_at values.
+  // Falling back to the browser's local date around midnight made daily tasks
+  // (due "tomorrow" per the server) vanish from every section while their
+  // avatar badge still counted them.
+  const today = (tasks[0] && tasks[0].today) || todayStr();
 
   // System accounts (kiosk/wall-display logins) don't take part in tasks, so
   // keep them out of the assignee picker, the member filter bar, and the
@@ -61,17 +70,46 @@ export default function TasksPage({ user, memberId, member }) {
     [members]
   );
 
-  const filtered = useMemo(() => {
+  // The list is split into three buckets:
+  //   1. Today's Outstanding — not done, and either due today or (non-repeating
+  //      only) overdue. Overdue tasks render with an "Overdue X days" badge.
+  //   2. Upcoming — not done, no due date or due within the next 7 days, and
+  //      daily repeats are excluded (they live in "today").
+  //   3. Today's Completed — anything finished sometime today (its instance or
+  //      completed_at date matches today's local date).
+  // Repeating tasks are rolled to their next occurrence once a day passes, so
+  // only non-repeating tasks can ever be "overdue" in this list.
+  const sections = useMemo(() => {
     let list = tasks;
     if (memberFilter) {
       list = list.filter((t) => (t.assignees || []).some((a) => a.id === memberFilter));
     }
-    if (filter === "done") return list.filter((t) => t.completed_at);
-    if (filter === "unassigned") return list.filter((t) => !(t.assignees || []).length && !t.completed_at);
-    if (filter === "today")
-      return list.filter((t) => !t.completed_at && (t.due_at ? t.due_at.slice(0, 10) <= today : false));
-    return list;
-  }, [tasks, filter, memberFilter, today]);
+    const todayPlus7 = addDaysStr(today, 7);
+    const byDue = (a, b) => {
+      const ad = a.due_at ? a.due_at.slice(0, 10) : "9999-99-99";
+      const bd = b.due_at ? b.due_at.slice(0, 10) : "9999-99-99";
+      return ad.localeCompare(bd) || a.id - b.id;
+    };
+
+    const outstanding = [];
+    const upcoming = [];
+    const completedToday = [];
+    for (const t of list) {
+      const due = t.due_at ? t.due_at.slice(0, 10) : null;
+      if (!t.completed_at) {
+        if (due === today || (due && due < today && !t.recurrence_type)) outstanding.push(t);
+        else if (t.recurrence_type !== "daily" && (!due || (due > today && due <= todayPlus7))) upcoming.push(t);
+      } else if ((t.completed_at || "").slice(0, 10) === today) {
+        completedToday.push(t);
+      }
+    }
+    outstanding.sort(byDue);
+    upcoming.sort(byDue);
+    completedToday.sort(
+      (a, b) => String(b.completed_at).localeCompare(String(a.completed_at)) || a.id - b.id
+    );
+    return { outstanding, upcoming, completedToday };
+  }, [tasks, memberFilter, today]);
 
   const openNew = () => { setEditing(null); setShowingForm(true); };
   const cancelForm = () => { setShowingForm(false); setEditing(null); };
@@ -104,11 +142,6 @@ export default function TasksPage({ user, memberId, member }) {
     refresh();
   }
 
-  async function handleAssign(task, userIds) {
-    await assignTask(task.id, userIds);
-    refresh();
-  }
-
   async function handleDelete(task) {
     if (confirm(`Delete "${task.name}"?`)) {
       await deleteTask(task.id);
@@ -132,7 +165,6 @@ export default function TasksPage({ user, memberId, member }) {
   const canEdit = adult || user?.is_kiosk || !!caps.edit;
   const canDelete = adult || user?.is_kiosk || !!caps.delete;
   const canReview = adult || user?.is_kiosk || !!caps.review;
-  const canAssignOthers = adult || user?.is_kiosk || !!caps.assign_others;
   const canViewOthers = adult || user?.is_kiosk || !!caps.view_others;
 
   // Standalone members with view_others can flip between everyone and a single
@@ -143,14 +175,16 @@ export default function TasksPage({ user, memberId, member }) {
     const c = {};
     for (const m of taskMembers) {
       const mine = tasks.filter((t) => (t.assignees || []).some((a) => a.id === m.id));
-      const dueUpToToday = mine.filter((t) => t.due_at && t.due_at.slice(0, 10) <= today);
+      // A task counts as incomplete until it's completed AND, when it requires
+      // an adult, reviewed — matching the "fully done" state used in TaskRow.
+      const fullyDone = (t) => t.completed_at && (!t.requires_adult_review || t.reviewed_at);
       c[m.id] = {
-        due: dueUpToToday.length,
-        remaining: dueUpToToday.filter((t) => !t.completed_at).length,
+        total: mine.length,
+        incomplete: mine.filter((t) => !fullyDone(t)).length,
       };
     }
     return c;
-  }, [tasks, taskMembers, today]);
+  }, [tasks, taskMembers]);
 
   // Avatar bar order: oldest first by birthday, members without a birthday last.
   const memberPicks = useMemo(
@@ -188,8 +222,10 @@ export default function TasksPage({ user, memberId, member }) {
             settings={settings}
             initial={editing}
             defaultAssigneeIds={memberFilter ? [memberFilter] : []}
+            canDelete={canDelete}
             onSubmit={handleSubmit}
             onCancel={cancelForm}
+            onDelete={handleDelete}
           />
         </div>
       )}
@@ -212,55 +248,99 @@ export default function TasksPage({ user, memberId, member }) {
               onClick={() => setMemberFilter(m.id)}
               title={m.name}
             >
-              <Avatar user={m} />
+              <span className="avatar-wrap">
+                <Avatar user={m} />
+                {counts[m.id]?.total > 0 && (
+                  counts[m.id].incomplete > 0
+                    ? <span className="avatar-badge" title={`${counts[m.id].incomplete} incomplete task${counts[m.id].incomplete === 1 ? "" : "s"}`}>{counts[m.id].incomplete}</span>
+                    : <span className="avatar-badge green" title="All tasks done">✓</span>
+                )}
+              </span>
               <span className="member-name">{m.name.split(" ")[0]}</span>
-              {counts[m.id]?.due > 0 && (
-                counts[m.id].remaining > 0
-                  ? <span className="badge" title={`${counts[m.id].remaining} task${counts[m.id].remaining === 1 ? "" : "s"} due`}>{counts[m.id].remaining}</span>
-                  : <span className="badge green" title="All due tasks done">✓</span>
-              )}
             </button>
           ))}
         </div>
       )}
 
-      <div className="row wrap" style={{ marginBottom: "0.75rem", gap: "0.3rem" }}>
-        {FILTERS.map(([key, label]) => (
-          <button
-            key={key}
-            className={filter === key ? "navlink active" : "navlink"}
-            onClick={() => setFilter(key)}
-          >
-            {label}
-          </button>
-        ))}
-        <span className="grow" />
-        <span className="small muted">{filtered.length} task{filtered.length === 1 ? "" : "s"}</span>
-      </div>
+      <div style={{ display: "grid", gap: "1.25rem" }}>
+        <TaskSection heading="Today’s Outstanding Tasks" count={sections.outstanding.length}>
+          {sections.outstanding.map((t) => (
+            <TaskRow
+              key={t.id}
+              task={t}
+              user={user}
+              memberById={memberById}
+              adult={adult}
+              today={today}
+              canEdit={canEdit}
+              canReview={canReview}
+              onToggleComplete={toggleComplete}
+              onToggleReview={toggleReview}
+              onEdit={() => { setEditing(t); setShowingForm(false); }}
+            />
+          ))}
+          {sections.outstanding.length === 0 && (
+            <div className="card muted">Nothing outstanding — all caught up!</div>
+          )}
+        </TaskSection>
 
-      <div style={{ display: "grid", gap: "0.6rem" }}>
-        {filtered.map((t) => (
-          <TaskRow
-            key={t.id}
-            task={t}
-            user={user}
-            memberById={memberById}
-            adult={adult}
-            today={today}
-            canEdit={canEdit}
-            canDelete={canDelete}
-            canReview={canReview}
-            canAssignOthers={canAssignOthers}
-            onToggleComplete={toggleComplete}
-            onToggleReview={toggleReview}
-            onAssign={handleAssign}
-            onEdit={() => { setEditing(t); setShowingForm(false); }}
-            onDelete={handleDelete}
-          />
-        ))}
-        {filtered.length === 0 && <div className="card muted">No tasks here.</div>}
+        <TaskSection heading="Upcoming Tasks" count={sections.upcoming.length}>
+          {sections.upcoming.map((t) => (
+            <TaskRow
+              key={t.id}
+              task={t}
+              user={user}
+              memberById={memberById}
+              adult={adult}
+              today={today}
+              canEdit={canEdit}
+              canReview={canReview}
+              onToggleComplete={toggleComplete}
+              onToggleReview={toggleReview}
+              onEdit={() => { setEditing(t); setShowingForm(false); }}
+            />
+          ))}
+          {sections.upcoming.length === 0 && (
+            <div className="card muted">No upcoming tasks.</div>
+          )}
+        </TaskSection>
+
+        <TaskSection heading="Today’s Completed Tasks" count={sections.completedToday.length}>
+          {sections.completedToday.map((t) => (
+            <TaskRow
+              key={t.id}
+              task={t}
+              user={user}
+              memberById={memberById}
+              adult={adult}
+              today={today}
+              canEdit={canEdit}
+              canReview={canReview}
+              onToggleComplete={toggleComplete}
+              onToggleReview={toggleReview}
+              onEdit={() => { setEditing(t); setShowingForm(false); }}
+            />
+          ))}
+          {sections.completedToday.length === 0 && (
+            <div className="card muted">No tasks completed today yet.</div>
+          )}
+        </TaskSection>
       </div>
     </div>
+  );
+}
+
+function TaskSection({ heading, count, children }) {
+  return (
+    <section>
+      <h2 className="small muted" style={{ margin: "0 0 0.4rem" }}>
+        {heading}
+        {count > 0 && <span> ({count})</span>}
+      </h2>
+      <div style={{ display: "grid", gap: "0.6rem" }}>
+        {children}
+      </div>
+    </section>
   );
 }
 
@@ -311,19 +391,16 @@ function dueLabel(task) {
   return label;
 }
 
-function TaskRow({ task, user, memberById, adult, today, canEdit, canDelete, canReview, canAssignOthers, onToggleComplete, onToggleReview, onAssign, onEdit, onDelete }) {
-  const overdue = task.due_at && task.due_at.slice(0, 10) < today && !task.completed_at;
+function TaskRow({ task, user, memberById, adult, today, canEdit, canReview, onToggleComplete, onToggleReview, onEdit }) {
+  const dueDate = task.due_at ? task.due_at.slice(0, 10) : null;
+  const overdue = !!dueDate && dueDate < today && !task.completed_at;
+  const daysOverdue = overdue ? daysBetween(today, dueDate) : 0;
   const awaitingReview = task.completed_at && task.requires_adult_review && !task.reviewed_at;
   const fullyDone = isFullyDone(task);
 
   const caps = user?.caps?.tasks || {};
   // Completing is allowed with either complete_own or complete_others (mirrors server assertCanComplete).
   const canComplete = adult || user?.is_kiosk || caps.complete_own || caps.complete_others;
-  const myIds = new Set((task.assignees || []).map((a) => a.id));
-  const assignedToSelf = myIds.has(user?.id);
-  // Assigning to a specific member requires assign_self for self / assign_others for others.
-  const canAssign =
-    adult || user?.is_kiosk || (assignedToSelf ? caps.assign_self : caps.assign_others);
 
   return (
     <div className="card row wrap" style={{ gap: "0.75rem" }}>
@@ -369,22 +446,17 @@ function TaskRow({ task, user, memberById, adult, today, canEdit, canDelete, can
                 ? <span className="badge amber">awaiting adult review</span>
                 : <span className="badge">needs adult review</span>
           )}
-          {overdue && <span className="badge red">overdue</span>}
+          {overdue && (
+            <span className="badge red">
+              Overdue {daysOverdue} day{daysOverdue === 1 ? "" : "s"}
+            </span>
+          )}
         </div>
 
         {task.description && <div className="small muted">{task.description}</div>}
 
         <div className="small muted">{dueLabel(task)}</div>
       </div>
-
-      {canAssign && (
-        <AssigneeField
-          value={(task.assignees || []).map((a) => a.id)}
-          members={Object.values(memberById)}
-          onChange={(ids) => onAssign(task, ids)}
-          addLabel={(task.assignees || []).length ? "+" : "+ assign"}
-        />
-      )}
 
       {canReview && awaitingReview && (
         <button className="" style={{ color: "var(--green)" }} onClick={() => onToggleReview(task)}>
@@ -396,7 +468,6 @@ function TaskRow({ task, user, memberById, adult, today, canEdit, canDelete, can
       )}
 
       {canEdit && <button className="small" onClick={onEdit}>Edit</button>}
-      {canDelete && <button className="small danger" onClick={() => onDelete(task)}>✕</button>}
     </div>
   );
 }

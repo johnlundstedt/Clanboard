@@ -1,10 +1,16 @@
 const BASE = "/api";
 
+// The browser's IANA timezone, sent on every request so the server can compute
+// "today" in the viewer's local calendar day instead of UTC.
+const TIMEZONE = Intl.DateTimeFormat().resolvedOptions().timeZone || "";
+
 async function req(path, options = {}) {
-  const res = await fetch(`${BASE}${path}`, {
-    headers: { "Content-Type": "application/json" },
-    ...options,
-  });
+  const headers = {
+    "Content-Type": "application/json",
+    ...(TIMEZONE ? { "X-Timezone": TIMEZONE } : {}),
+    ...(options.headers || {}),
+  };
+  const res = await fetch(`${BASE}${path}`, { ...options, headers });
   if (res.status === 401) {
     window.dispatchEvent(new Event("fh:unauthorized"));
     throw new Error("Not authenticated");
@@ -28,6 +34,13 @@ export const getMe = () => req("/auth/me");
 export const login = (name, password) =>
   req("/auth/login", { method: "POST", body: JSON.stringify({ name, password }) });
 export const logout = () => req("/auth/logout", { method: "POST" });
+export const forgotPassword = (name, email) =>
+  req("/auth/forgot-password", { method: "POST", body: JSON.stringify({ name, email }) });
+export const setPassword = (currentPassword, newPassword) =>
+  req("/auth/set-password", {
+    method: "POST",
+    body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+  });
 
 // --- Modules / nav -----------------------------------------------------------
 export const getModules = () => req("/modules");
@@ -72,6 +85,8 @@ export const getCalendarEvents = (start, end) =>
 export const getCalendarConnections = () => req("/calendar/connections");
 export const createCalendarConnection = (conn) =>
   req("/calendar/connections", { method: "POST", body: JSON.stringify(conn) });
+export const updateCalendarConnection = (id, patch) =>
+  req(`/calendar/connections/${id}`, { method: "PATCH", body: JSON.stringify(patch) });
 export const deleteCalendarConnection = (id) => req(`/calendar/connections/${id}`, { method: "DELETE" });
 export const syncCalendar = () => req("/calendar/sync", { method: "POST" });
 
@@ -104,6 +119,9 @@ export const createMember = (member) =>
 export const updateMember = (id, fields) =>
   req(`/admin/members/${id}`, { method: "PATCH", body: JSON.stringify(fields) });
 export const deleteMember = (id) => req(`/admin/members/${id}`, { method: "DELETE" });
+export const unlockMember = (id) => req(`/admin/members/${id}/unlock`, { method: "POST" });
+export const resetMemberPassword = (id) =>
+  req(`/admin/members/${id}/reset-password`, { method: "POST" });
 export const getMemberModules = (id) => req(`/admin/members/${id}/modules`);
 export const setMemberModule = (id, module, enabled) =>
   req(`/admin/members/${id}/modules`, {

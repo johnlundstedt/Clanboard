@@ -12,6 +12,8 @@ export interface ConnectionWire {
   color: string | null;
   enabled: 0 | 1;
   created_at: string;
+  last_synced_at: string | null;
+  last_sync_error: string | null;
 }
 
 function mapConnection(c: typeof calendarConnections.$inferSelect): ConnectionWire {
@@ -24,7 +26,26 @@ function mapConnection(c: typeof calendarConnections.$inferSelect): ConnectionWi
     color: c.color,
     enabled: c.enabled ? 1 : 0,
     created_at: c.createdAt,
+    last_synced_at: c.lastSyncedAt,
+    last_sync_error: c.lastSyncError,
   };
+}
+
+// App-wide Google API key, supplied at boot from deployment config (Workers
+// secret / .dev.vars / container env) rather than per connection. A connection's
+// own api_key always wins over this shared value.
+export interface CalendarConfig {
+  googleApiKey: string | null;
+}
+
+let calendarConfig: CalendarConfig = { googleApiKey: null };
+
+export function initCalendarConfig(cfg: Partial<CalendarConfig>) {
+  calendarConfig = { ...calendarConfig, ...cfg };
+}
+
+export function resolveApiKey(conn: Pick<ConnectionWire, "api_key">): string | null {
+  return conn.api_key || calendarConfig.googleApiKey;
 }
 
 // Accept either a raw Google Calendar id (e.g. "abc@group.calendar.google.com")
@@ -198,10 +219,13 @@ async function fetchEvents(
   timeMin: string,
   timeMax: string
 ): Promise<unknown[]> {
-  if (!conn.api_key) {
+  const apiKey = resolveApiKey(conn);
+  if (!apiKey) {
     throw new Error(
       "Google Calendar sync needs an API key: in Google Cloud, enable the " +
-        "Calendar API for your project, create an API key, then save it on this " +
+        "Calendar API for a project, create an API key (APIs & Services → " +
+        "Credentials → Create credentials → API key), then either set the " +
+        "GOOGLE_API_KEY secret in deployment config or save the key on this " +
         "calendar connection (Admin → Calendar)."
     );
   }
@@ -212,7 +236,7 @@ async function fetchEvents(
   url.searchParams.set("timeMax", timeMax);
   url.searchParams.set("singleEvents", "true");
   url.searchParams.set("maxResults", "250");
-  url.searchParams.set("key", conn.api_key);
+  url.searchParams.set("key", apiKey);
 
   const res = await fetch(url);
   if (!res.ok) {
@@ -260,8 +284,14 @@ export async function syncConnection(db: DbClient, conn: ConnectionWire) {
     items = await fetchEvents(conn, timeMin, timeMax);
   } catch (err) {
     // Leave cache intact on transient failure; admin sees error in sync result
-    console.error(`[calendar] sync ${conn.id} (${conn.calendar_id}):`, err instanceof Error ? err.message : err);
-    return { skipped: 0, error: err instanceof Error ? err.message : String(err) };
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`[calendar] sync ${conn.id} (${conn.calendar_id}):`, message);
+    await db
+      .update(calendarConnections)
+      .set({ lastSyncError: message })
+      .where(eq(calendarConnections.id, conn.id))
+      .run();
+    return { skipped: 0, error: message };
   }
 
   const seen = new Set<string>();
@@ -311,6 +341,13 @@ export async function syncConnection(db: DbClient, conn: ConnectionWire) {
       )
       .run();
   }
+
+  // Mark the connection synced now that the fetch + cache merge succeeded
+  await db
+    .update(calendarConnections)
+    .set({ lastSyncedAt: new Date().toISOString(), lastSyncError: null })
+    .where(eq(calendarConnections.id, conn.id))
+    .run();
 
   return { inserted: seen.size };
 }

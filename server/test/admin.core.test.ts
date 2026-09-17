@@ -205,15 +205,15 @@ for (const backend of backends) {
         const member = (await admin.createMember(db.db, {
           name: "Ada",
           is_admin: true,
-          password: "secret",
+          password: "Secret123!",
         }))!;
         expect(member.id).toBeGreaterThan(0);
         expect(member.name).toBe("Ada");
         expect(member.is_admin).toBe(true);
-        expect(JSON.stringify(member)).not.toContain("secret");
+        expect(JSON.stringify(member)).not.toContain("Secret123!");
 
         const row = await db.db.select().from(s.users).all();
-        expect(verifyPassword("secret", row[0].passwordHash)).toBe(true);
+        expect(verifyPassword("Secret123!", row[0].passwordHash)).toBe(true);
       });
 
       it("updateMember edits fields, clears role when sent as null, and resets the password", async () => {
@@ -226,9 +226,9 @@ for (const backend of backends) {
         expect(updated?.name).toBe("Bobby");
         expect(updated?.birthday).toBe("2015-06-01");
 
-        await admin.updateMember(db.db, member.id, { password: "newpass" });
+        await admin.updateMember(db.db, member.id, { password: "Newpass123!" });
         const row = await db.db.select().from(s.users).all();
-        expect(verifyPassword("newpass", row[0].passwordHash)).toBe(true);
+        expect(verifyPassword("Newpass123!", row[0].passwordHash)).toBe(true);
 
         await expect(admin.updateMember(db.db, 9999, {})).rejects.toMatchObject({
           status: 404,

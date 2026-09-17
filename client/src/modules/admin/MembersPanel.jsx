@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Avatar from "../../components/Avatar.jsx";
 import {
-  getMembers, createMember, updateMember, deleteMember, uploadPhoto,
+  getMembers, createMember, updateMember, deleteMember, unlockMember, resetMemberPassword, uploadPhoto,
   getRoles,
 } from "../../api.js";
 import { usePolling } from "../../realtime.js";
@@ -68,19 +68,26 @@ export default function MembersPanel() {
               <div className="grow">
                 <strong>{m.name}</strong>
                 {m.is_admin && <span className="badge" style={{ marginLeft: "0.4rem" }}>admin</span>}
+                {m.is_kiosk && <span className="badge" style={{ marginLeft: "0.4rem" }}>kiosk</span>}
+                {m.login_enabled && <span className="badge" style={{ marginLeft: "0.4rem" }}>login</span>}
+                {m.locked && <span className="badge amber" style={{ marginLeft: "0.4rem" }}>locked</span>}
                 {m.role_id && <span className="badge" style={{ marginLeft: "0.4rem" }}>{roleName(m, roles)}</span>}
                 {isBirthdayToday(m.birthday) && <span className="badge amber" style={{ marginLeft: "0.4rem" }}>🎂 today</span>}
                 <div className="small muted">
-                  {m.birthday
-                    ? `Birthday ${formatBirthday(m.birthday)} · age ${calculateAge(m.birthday)}`
-                    : ""}
-                  {m.photo_url ? " · photo" : ""}
+                  {m.system_account
+                    ? "system account"
+                    : [
+                        m.email ? `Email ${m.email}` : m.login_enabled ? "no email set" : "",
+                        m.login_enabled && m.must_change_password ? "must change password" : "",
+                        m.birthday ? `Birthday ${formatBirthday(m.birthday)} · age ${calculateAge(m.birthday)}` : "",
+                        m.photo_url ? "photo" : "",
+                      ].filter(Boolean).join(" · ")}
                 </div>
               </div>
+              {m.locked && (
+                <button onClick={async () => { await unlockMember(m.id); refresh(); }}>Unlock</button>
+              )}
               <button onClick={() => { setEditing(m); setShowForm(false); }}>Edit</button>
-              <button className="danger" onClick={async () => {
-                if (confirm(`Remove ${m.name}?`)) { await deleteMember(m.id); refresh(); }
-              }}>✕</button>
             </div>
           ))}
           {visibleMembers.length === 0 && <p className="muted">No members yet.</p>}
@@ -100,8 +107,11 @@ function MemberForm({ roles, initial, onCancel, onSaved }) {
   const [gender, setGender] = useState(initial?.gender || "");
   const [roleId, setRoleId] = useState(initial?.role_id || "");
   const [isAdmin, setIsAdmin] = useState(!!initial?.is_admin);
+  const [isKiosk, setIsKiosk] = useState(!!initial?.is_kiosk);
   const [systemAccount, setSystemAccount] = useState(!!initial?.system_account);
   const [password, setPassword] = useState("");
+  const [loginEnabled, setLoginEnabled] = useState(!!initial?.login_enabled);
+  const [email, setEmail] = useState(initial?.email || "");
   const [photoUrl, setPhotoUrl] = useState(initial?.photo_url || "");
   const [uploading, setUploading] = useState(false);
   const [cameraOpen, setCameraOpen] = useState(false);
@@ -192,6 +202,7 @@ function MemberForm({ roles, initial, onCancel, onSaved }) {
   async function handleSubmit(e) {
     e.preventDefault();
     if (!name.trim()) return;
+    const loginManaged = !isKiosk && !systemAccount;
     const payload = {
       name,
       birthday: birthday || null,
@@ -199,7 +210,10 @@ function MemberForm({ roles, initial, onCancel, onSaved }) {
       role_id: roleId ? Number(roleId) : null,
       photo_url: photoUrl || null,
       is_admin: isAdmin,
+      is_kiosk: isKiosk,
       system_account: systemAccount,
+      login_enabled: loginManaged && loginEnabled,
+      email: email.trim() || null,
       ...(password ? { password } : {}),
     };
     if (initial) await updateMember(initial.id, payload);
@@ -207,6 +221,22 @@ function MemberForm({ roles, initial, onCancel, onSaved }) {
     onCancel();
     onSaved();
     window.dispatchEvent(new Event("fh:user-changed"));
+  }
+
+  async function handleResetPassword() {
+    if (!initial) return;
+    if (!confirm(`Email ${initial.name} a new temporary password? They'll set their own on next sign-in.`)) return;
+    await resetMemberPassword(initial.id);
+    await onSaved();
+    alert(`Temporary password emailed to ${initial.email}.`);
+  }
+
+  async function handleDelete() {
+    if (!initial) return;
+    if (!confirm(`Remove ${initial.name}?`)) return;
+    await deleteMember(initial.id);
+    onCancel();
+    onSaved();
   }
 
   return (
@@ -239,10 +269,50 @@ function MemberForm({ roles, initial, onCancel, onSaved }) {
           Admin
         </label>
         <label className="row small">
+          <input type="checkbox" checked={isKiosk} onChange={(e) => setIsKiosk(e.target.checked)} />
+          Kiosk (wall display)
+        </label>
+        <label className="row small">
           <input type="checkbox" checked={systemAccount} onChange={(e) => setSystemAccount(e.target.checked)} />
           System Account
         </label>
       </div>
+
+      {!isKiosk && !systemAccount && (
+        <div className="card" style={{ padding: "0.6rem 0.8rem", display: "grid", gap: "0.5rem" }}>
+          <label className="row small">
+            <input
+              type="checkbox"
+              checked={loginEnabled}
+              onChange={(e) => setLoginEnabled(e.target.checked)}
+            />
+            <strong>Enable login (email)</strong>
+          </label>
+          <input
+            style={{ width: "22rem", maxWidth: "100%" }}
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="Email address"
+            autoComplete="email"
+          />
+          {loginEnabled && !password && (
+            <span className="small muted">
+              A temporary password will be emailed{initial ? " — they'll change it on next sign-in." : " — they choose a new one on their first sign-in."}
+            </span>
+          )}
+          {loginEnabled && password && (
+            <span className="small muted">Password (must be at least 8 chars, with upper, lower and a symbol)</span>
+          )}
+        </div>
+      )}
+
+      {initial && initial.login_enabled && initial.email && (
+        <div className="row wrap" style={{ alignItems: "center", gap: "0.5rem" }}>
+          <button type="button" onClick={handleResetPassword}>Reset password</button>
+          <span className="small muted">Emails a new temporary password to {initial.email} — they'll change it on next sign-in.</span>
+        </div>
+      )}
 
       <div className="row wrap">
         <div className="row">
@@ -288,6 +358,7 @@ function MemberForm({ roles, initial, onCancel, onSaved }) {
       <div className="row">
         <button className="primary" type="submit">{initial ? "Save" : "Add member"}</button>
         <button type="button" onClick={onCancel}>Cancel</button>
+        {initial && <button type="button" className="danger" onClick={handleDelete}>Delete member</button>}
       </div>
 
       {cameraOpen && (

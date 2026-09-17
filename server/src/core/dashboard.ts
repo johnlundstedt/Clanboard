@@ -1,10 +1,10 @@
-import { and, asc, eq, exists, inArray, isNull, notExists, or, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull, isNull, notExists, or, sql } from "drizzle-orm";
 import type { DbClient } from "./db.js";
 import { getSetting, isModuleEnabled, setSetting } from "./db.js";
-import { mealPlan, taskAssignees, tasks, users } from "../schema.js";
+import { mealPlan, taskAssignees, taskOccurrences, tasks, users } from "../schema.js";
 import { todayStr } from "../modules/tasks/recurrence.js";
 import { HttpError, badRequest } from "./errors.js";
-import { mapTaskRow } from "./tasks.js";
+import { mapTaskRow, materializeTaskOccurrences } from "./tasks.js";
 
 // WMO weather codes -> [label, emoji] (same mapping the old handler used).
 export const WMO_CODES: Record<number, [string, string]> = {
@@ -72,7 +72,73 @@ export function convertDay(day: WeatherDay, units: string): Record<string, unkno
   return out;
 }
 
+// The forecast is a per-household read the dashboard hits on every poll, but
+// the underlying data changes at most hourly. Cache the converted daily panel
+// for a short TTL so dashboard loads short-circuit instead of paying an external
+// API round-trip (latency and a point of failure on the kiosk path).
+const WEATHER_TTL_MS = 30 * 60 * 1000;
+// Workers isolates share almost nothing, so on the Worker the cache lives in the
+// runtime cache (caches.default); on Node (container + test suite) it falls back
+// to an in-process Map. Both store the encoded panel + a fetch timestamp, so the
+// TTL is enforced identically everywhere (the runtime cache may also evict at
+// will, which is fine).
+const nodeWeatherCache = new Map<string, { at: number; body: string }>();
+
+// Only the slice of the CacheStorage API this helper touches.
+interface WeatherCacheStore {
+  match(key: Request | string): Promise<Response | null>;
+  put(request: Request, response: Response): Promise<unknown>;
+  delete(key: Request | string): Promise<unknown>;
+}
+
+function weatherCacheStore(): WeatherCacheStore | null {
+  return (
+    (globalThis as { caches?: { default?: WeatherCacheStore } }).caches?.default ?? null
+  );
+}
+
+function weatherCacheKey(lat: string, lon: string, units: string): string {
+  // Bucket on the UTC date: the forecast's day[0] is the location's "today", so
+  // a new calendar day must refetch even if the 30-min TTL hasn't elapsed —
+  // serving "yesterday" as the dashboard's leading panel is never correct.
+  return `weather:${todayStr()}:${lat}:${lon}:${units}`;
+}
+
+async function weatherCacheGet(key: string): Promise<string | null> {
+  const store = weatherCacheStore();
+  if (store) {
+    const url = `https://clanboard.invalid/weather?key=${key}`;
+    const hit = await store.match(url);
+    if (!hit) return null;
+    const at = Number(hit.headers.get("x-weather-at") || "0");
+    if (Date.now() - at > WEATHER_TTL_MS) {
+      await store.delete(url);
+      return null;
+    }
+    return await hit.text();
+  }
+  const rec = nodeWeatherCache.get(key);
+  if (rec && Date.now() - rec.at <= WEATHER_TTL_MS) return rec.body;
+  return null;
+}
+
+async function weatherCacheSet(key: string, body: string): Promise<void> {
+  const store = weatherCacheStore();
+  if (store) {
+    const res = new Response(body, {
+      headers: { "Content-Type": "application/json", "x-weather-at": String(Date.now()) },
+    });
+    await store.put(new Request(`https://clanboard.invalid/weather?key=${key}`), res);
+    return;
+  }
+  nodeWeatherCache.set(key, { at: Date.now(), body });
+}
+
 export async function fetchWeather(lat: string, lon: string, units: string) {
+  const cacheKey = weatherCacheKey(lat, lon, units);
+  const cached = await weatherCacheGet(cacheKey);
+  if (cached) return JSON.parse(cached) as Array<Record<string, unknown>>;
+
   const url = new URL("https://api.open-meteo.com/v1/forecast");
   url.searchParams.set("latitude", lat);
   url.searchParams.set("longitude", lon);
@@ -99,6 +165,8 @@ export async function fetchWeather(lat: string, lon: string, units: string) {
       units
     );
   });
+
+  await weatherCacheSet(cacheKey, JSON.stringify(days));
   return days;
 }
 
@@ -181,8 +249,8 @@ interface BirthdayWire {
   turning_age: number;
 }
 
-export async function birthsInWindow(db: DbClient, daysAhead: number): Promise<BirthdayWire[]> {
-  const today = todayStr();
+export async function birthsInWindow(db: DbClient, daysAhead: number, timezone?: string): Promise<BirthdayWire[]> {
+  const today = todayStr(timezone);
   const todayMMDD = today.slice(5);
   const nowYear = Number(today.slice(0, 4));
 
@@ -222,71 +290,116 @@ interface ChildRowWire {
 // otherwise every family member gets a row.
 export async function childTodayRows(
   db: DbClient,
-  userIds: number[] | null = null
+  userIds: number[] | null = null,
+  timezone?: string
 ): Promise<ChildRowWire[]> {
-  const today = todayStr();
+  const today = todayStr(timezone);
   const usersPromise = userIds
     ? db.select().from(users).where(inArray(users.id, userIds)).all()
     : db.select().from(users).orderBy(asc(users.id)).all();
   const children = await usersPromise;
+  const childIds = children.map((c) => c.id);
+  if (!childIds.length) return [];
 
-  const childTotals: ChildRowWire[] = [];
-  for (const child of children) {
-    const todaysRows = await db
-      .select()
-      .from(tasks)
-      .where(
-        and(
-          isNull(tasks.completedAt),
-          or(
-            isNull(tasks.dueAt),
-            sql`substr(${tasks.dueAt}, 1, 10) < ${today}`,
-            sql`substr(${tasks.dueAt}, 1, 10) = ${today}`
+  // One household-wide pass: tasks joined to their assignees and to today's (if
+  // any) occurrence row, so the whole list is served by a single statement
+  // instead of a per-member query. A task with several assignees appears once
+  // per child, exactly like the per-member EXISTS queries it replaces.
+  const rows = await db
+    .select({ task: tasks, occurrence: taskOccurrences, userId: taskAssignees.userId })
+    .from(taskAssignees)
+    .innerJoin(tasks, eq(taskAssignees.taskId, tasks.id))
+    .leftJoin(
+      taskOccurrences,
+      and(eq(taskOccurrences.taskId, tasks.id), eq(taskOccurrences.occurrenceDate, today))
+    )
+    .where(
+      and(
+        inArray(taskAssignees.userId, childIds),
+        or(
+          and(
+            isNull(tasks.completedAt),
+            or(isNull(tasks.dueAt), sql`substr(${tasks.dueAt}, 1, 10) <= ${today}`)
           ),
-          exists(
-            db
-              .select({ one: sql`1` })
-              .from(taskAssignees)
-              .where(and(eq(taskAssignees.taskId, tasks.id), eq(taskAssignees.userId, child.id)))
-          )
+          sql`${taskOccurrences.id} IS NOT NULL`
         )
       )
-      .orderBy(sql`substr(${tasks.dueAt}, 1, 10), ${tasks.dueAt}, ${tasks.id}`)
-      .all();
+    )
+    .orderBy(sql`substr(${tasks.dueAt}, 1, 10), ${tasks.dueAt}, ${tasks.id}`)
+    .all();
 
-    const completedTodayCount = await db
-      .select({ c: sql<number>`count(*)` })
-      .from(tasks)
-      .where(
-        and(
-          sql`substr(${tasks.completedAt}, 1, 10) = ${today}`,
-          exists(
-            db
-              .select({ one: sql`1` })
-              .from(taskAssignees)
-              .where(and(eq(taskAssignees.taskId, tasks.id), eq(taskAssignees.userId, child.id)))
-          )
-        )
-      )
-      .get();
-
-    childTotals.push({
+  const byChild = new Map<number, ChildRowWire>();
+  for (const child of children) {
+    byChild.set(child.id, {
       child: { id: child.id, name: child.name, photo_url: child.photoUrl },
-      todays: todaysRows.map(mapTaskRow),
-      completed_today_count: Number(completedTodayCount?.c ?? 0),
-      total: todaysRows.length,
+      todays: [],
+      completed_today_count: 0,
+      total: 0,
       done: 0,
     });
   }
-  return childTotals;
+  for (const row of rows) {
+    const entry = byChild.get(row.userId);
+    if (!entry) continue;
+    const wire = mapTaskRow(row.task);
+    if (row.occurrence) {
+      wire.completed_at = row.occurrence.completedAt;
+      if (row.occurrence.reviewedAt) wire.reviewed_at = row.occurrence.reviewedAt;
+    }
+    entry.todays.push(wire);
+  }
+  for (const entry of byChild.values()) {
+    entry.total = entry.todays.length;
+    entry.done = entry.todays.filter((t) => t.completed_at).length;
+  }
+
+  // Today's completion counts per member, both in one grouped statement each
+  // (instead of two queries per member): tasks finished today, and completed
+  // recurring instances recorded in task_occurrences.
+  const completedByUser = await db
+    .select({ userId: taskAssignees.userId, c: sql<number>`count(*)` })
+    .from(taskAssignees)
+    .innerJoin(tasks, eq(taskAssignees.taskId, tasks.id))
+    .where(
+      and(
+        inArray(taskAssignees.userId, childIds),
+        sql`substr(${tasks.completedAt}, 1, 10) = ${today}`
+      )
+    )
+    .groupBy(taskAssignees.userId)
+    .all();
+  const occurredByUser = await db
+    .select({ userId: taskAssignees.userId, c: sql<number>`count(*)` })
+    .from(taskAssignees)
+    .innerJoin(taskOccurrences, eq(taskOccurrences.taskId, taskAssignees.taskId))
+    .where(
+      and(
+        inArray(taskAssignees.userId, childIds),
+        eq(taskOccurrences.occurrenceDate, today),
+        isNotNull(taskOccurrences.completedAt)
+      )
+    )
+    .groupBy(taskAssignees.userId)
+    .all();
+
+  for (const r of [...completedByUser, ...occurredByUser]) {
+    const entry = byChild.get(r.userId);
+    if (entry) entry.completed_today_count += Number(r.c ?? 0);
+  }
+
+  return [...byChild.values()];
 }
 
 // Household dashboard: weather, birthdays, per-member task rows, unassigned
 // tasks, and today's meals. `user_id` narrows to a single member (wall display).
-export async function getDashboard(db: DbClient, opts: { user_id?: string | number } = {}) {
+export async function getDashboard(db: DbClient, opts: { user_id?: string | number; timezone?: string } = {}) {
   const lat = await getSetting(db, "latitude");
   const lon = await getSetting(db, "longitude");
   const units = (await getSetting(db, "weather_units")) || "metric";
+
+  // Keep recurring-task instances materialized and completed rows rolled, so
+  // the per-member queries below read a consistent, up-to-date schedule.
+  await materializeTaskOccurrences(db, { timezone: opts.timezone });
 
   let weather = null;
   if (lat && lon) {
@@ -298,11 +411,13 @@ export async function getDashboard(db: DbClient, opts: { user_id?: string | numb
     }
   }
 
-  const upcomingBirthdays = await birthsInWindow(db, 30);
+  const upcomingBirthdays = await birthsInWindow(db, 30, opts.timezone);
 
   const userId = opts.user_id ? Number(opts.user_id) : null;
   const member = userId ? await db.select().from(users).where(eq(users.id, userId)).get() : null;
-  const children = member ? await childTodayRows(db, [member.id]) : await childTodayRows(db);
+  const children = member
+    ? await childTodayRows(db, [member.id], opts.timezone)
+    : await childTodayRows(db, null, opts.timezone);
 
   let unassigned: ReturnType<typeof mapTaskRow>[] = [];
   if (!member) {
@@ -320,7 +435,7 @@ export async function getDashboard(db: DbClient, opts: { user_id?: string | numb
     unassigned = rows.map(mapTaskRow);
   }
 
-  const todayDate = todayStr();
+  const todayDate = todayStr(opts.timezone);
   const todayMeals: Record<string, string | null> = {};
   if (await isModuleEnabled(db, "meal-plan")) {
     const rows = await db

@@ -163,6 +163,31 @@ for (const backend of backends) {
         expect(both.map((r) => r.child.name).sort()).toEqual(["Alice", "Bob"]);
         expect(both.find((r) => r.child.id === bob.id)?.todays).toEqual([]);
       });
+
+      it("counts recurring completions today through occurrences", async () => {
+        const today = todayStr();
+        const alice = await seedUser(db, { name: "Alice" });
+        // Simulates a recurring task whose row already rolled to tomorrow:
+        // it only belongs on today's list because of the stored occurrence.
+        const rec = await seedTask(db, {
+          name: "Water plants",
+          dueAt: addDays(today, 1),
+          completedAt: null,
+        });
+        await link(db, rec.id, alice.id);
+        await db.db.insert(s.taskOccurrences).values({
+          taskId: rec.id,
+          occurrenceDate: today,
+          completedAt: `${today}T09:00:00`,
+          completedBy: alice.id,
+        }).run();
+
+        const rows = await dashboard.childTodayRows(db.db, [alice.id]);
+        expect(rows[0].completed_today_count).toBe(1);
+        expect(rows[0].todays.map((t) => t.name)).toContain("Water plants");
+        expect(rows[0].todays.find((t) => t.name === "Water plants")!.completed_at).toBeTruthy();
+        expect(rows[0].done).toBe(1);
+      });
     });
 
     describe("getDashboard", () => {

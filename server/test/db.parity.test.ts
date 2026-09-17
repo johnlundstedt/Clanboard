@@ -51,7 +51,7 @@ for (const backend of backends) {
       for (const t of [
         "users", "member_roles", "role_modules", "modules", "settings",
         "user_modules", "sessions", "task_categories", "task_priorities",
-        "tasks", "task_assignees", "lists", "list_items", "meal_plan",
+        "tasks", "task_assignees", "task_occurrences", "lists", "list_items", "meal_plan",
         "calendar_connections", "calendar_cache",
       ]) {
         expect(tables).toContain(t);

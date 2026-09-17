@@ -17,3 +17,4 @@ data/uploads/
 
 # Wrangler local state
 .wrangler/
+server/.dev.vars

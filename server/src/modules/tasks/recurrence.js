@@ -26,9 +26,23 @@ export function parseDays(daysOfWeekText) {
   }
 }
 
-export function todayStr() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+export function todayStr(timeZone) {
+  if (!timeZone) {
+    const d = new Date();
+    return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+  }
+  // Local calendar day in the given IANA timezone (e.g. "America/Los_Angeles").
+  // The server (a Cloudflare Worker) runs on UTC, so without an explicit zone
+  // "today" would cross over a day early for viewers behind UTC. Falls back to
+  // the UTC date when no timezone is known (cron jobs, direct API callers).
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
+  const part = (type) => parts.find((p) => p.type === type)?.value || "";
+  return `${part("year")}-${part("month")}-${part("day")}`;
 }
 
 export function addDays(dateStr, n) {

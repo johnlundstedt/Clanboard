@@ -17,6 +17,8 @@
 
 body {
   margin: 0;
+  min-height: 100vh;
+  min-height: 100svh;
   background: var(--bg);
   color: var(--text);
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
@@ -131,7 +133,31 @@ input:focus, select:focus, textarea:focus {
 .member-pick:hover { background: var(--bg-soft, #f3f4f6); }
 .member-pick.active { border-color: var(--accent); background: #eff6ff; }
 .member-pick .member-name { font-size: 0.72rem; color: var(--muted); }
-.member-pick .badge { font-size: 0.65rem; padding: 1px 6px; }
+
+/* Count / done badge overlaid on the avatar's bottom-right corner */
+.avatar-wrap {
+  position: relative;
+  display: inline-flex;
+}
+.avatar-badge {
+  position: absolute;
+  right: -4px;
+  bottom: -4px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.62rem;
+  font-weight: 700;
+  line-height: 1;
+  background: #eef2ff;
+  color: #4338ca;
+  box-shadow: 0 0 0 2px var(--surface, #fff);
+}
+.avatar-badge.green { background: #dcfce7; color: #166534; }
 
 /* Multi-assignee tag chips */
 .chip {
@@ -177,15 +203,21 @@ input:focus, select:focus, textarea:focus {
   background: var(--surface);
   border-bottom: 1px solid var(--border);
   flex-wrap: wrap;
+  position: sticky;
+  top: 0;
+  z-index: 30;
 }
 .nav .title {
   font-weight: 700;
   font-size: 1.7rem;
   margin-right: 0.75rem;
+  gap: 10px;
 }
 .nav-modules {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.6rem;
+  justify-content: center;
 }
 .nav-actions {
   flex: 1;
@@ -219,11 +251,33 @@ input:focus, select:focus, textarea:focus {
   background: #eff6ff;
   color: var(--accent-dark);
 }
+.nav .nav-badge {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--red, #ef4444);
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 18px;
+  text-align: center;
+  pointer-events: none;
+}
 .nav .spacer { flex: 1; }
 
 /* Kiosk / wall-display shell: header on top, family sidebar below it on the left */
-.kiosk { display: flex; flex-direction: column; min-height: 100vh; }
-.kiosk-body { display: flex; flex: 1; }
+.kiosk {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  height: 100svh;
+  overflow: hidden;
+}
+.kiosk-body { display: flex; flex: 1; min-height: 0; overflow: hidden; }
 .kiosk-side {
   display: flex;
   flex-direction: column;
@@ -270,11 +324,12 @@ input:focus, select:focus, textarea:focus {
   white-space: nowrap;
   text-align: center;
 }
-.kiosk-main { flex: 1; min-width: 0; }
+.kiosk-main { flex: 1; min-width: 0; min-height: 0; overflow-y: auto; }
 
 /* Login screen */
 .login-wrap {
   min-height: 100vh;
+  min-height: 100svh;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -296,6 +351,51 @@ input:focus, select:focus, textarea:focus {
 .board { color: var(--accent); }
 .login-brand .login-tagline { margin: 0.25rem 0 0; color: var(--muted); font-size: 1.35rem; }
 .login-card { width: 100%; max-width: 360px; }
+
+/* Phones/tablets: stack branding and card into one centered column. The
+   desktop row + flex-wrap makes the two wrapped lines stretch to fill the
+   viewport height (align-content), which pushed the card far below the logo. */
+@media (max-width: 768px) {
+  .login-wrap {
+    flex-direction: column;
+    justify-content: safe center;
+    align-items: center;
+    gap: 2rem;
+    padding: 1rem 1rem 2rem;
+  }
+  .login-card { margin-top: 0; }
+  /* Tighter left margin for the app header on phones */
+  .nav { padding-left: 0.5rem; }
+  .nav .title { gap: 4px; }
+  /* Phones: move the module icons onto their own centered row below the header */
+  .nav-modules {
+    order: 2;
+    flex-basis: 100%;
+  }
+  .nav-actions { order: 1; }
+}
+
+/* Dashboard weather strip: three days side by side, icons only */
+.weather-strip {
+  display: flex;
+  gap: 0.5rem;
+}
+.weather-day {
+  flex: 1;
+  min-width: 0;
+  text-align: center;
+  padding: 0.25rem 0;
+}
+/* Emoji glyphs render at different intrinsic heights (e.g. ☀ vs 🌦), so each
+   icon gets a fixed box with the glyph centered inside for a uniform row. */
+.weather-icon {
+  font-size: 1.6rem;
+  line-height: 1;
+  height: 2.2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
 
 /* Dashboard xkcd-style per-child row */
 .child-progress {

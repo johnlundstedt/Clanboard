@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import * as s from "../src/schema.js";
 import * as core from "../src/core/tasks.js";
 import { addDays, todayStr } from "../src/modules/tasks/recurrence.js";
@@ -30,6 +30,10 @@ function snakeUser(u: typeof s.users.$inferSelect, extra: Partial<{ role_id: num
     is_admin: u.isAdmin as unknown as boolean,
     is_kiosk: u.isKiosk as unknown as boolean,
   };
+}
+
+function assigneesOf(hist: ReturnType<typeof core.taskOccurrenceHistory> extends Promise<infer T> ? T : never, taskId: number) {
+  return hist.rows.find((r) => r.task_id === taskId)?.assignees ?? [];
 }
 
 async function seedCategory(db: TestDatabase, opts: { name?: string; is_default?: boolean } = {}) {
@@ -181,25 +185,250 @@ for (const backend of backends) {
       expect(ups.find((p) => p.id === high.id)!.name).toBe("Urgent");
     });
 
-    it("complete/rollover of a repeating task keeps recurrence fields", async () => {
+    it("completing a repeating task keeps its due date and marks the instance", async () => {
       const admin = await seedUser(db, { name: "Admin", is_admin: true });
       const user = snakeUser(admin);
+      const dueAt = todayStr();
       const task = await core.createTask(db.db, user, {
         name: "Feed the cat",
         recurrence_type: "daily",
         recurrence_interval: 1,
-        recurrence_start_date: "2026-09-01",
-        due_at: "2026-09-10",
+        recurrence_start_date: dueAt,
+        due_at: dueAt,
         assigned_ids: [admin.id],
       });
       // Admin can complete anyone's task, so completion works regardless.
       expect(await core.completeTask(db.db, user, task.id)).toEqual({ ok: true });
       const rows = await db.db.select().from(s.tasks).where(eq(s.tasks.id, task.id)).all();
-      // Daily tasks roll one day forward **from today** (legacy behaviour), so
-      // the expected date is derived from the clock rather than due_at.
-      expect(rows[0].dueAt).toBe(addDays(todayStr(), 1));
-      expect(rows[0].completedAt).toBeNull();
+      // No eager roll on the due day: the row stays on today's instance, now completed.
+      expect(rows[0].dueAt).toBe(dueAt);
+      expect(rows[0].completedAt).toBeTruthy();
       expect(rows[0].recurrenceType).toBe("daily");
+      const occ = await db.db
+        .select()
+        .from(s.taskOccurrences)
+        .where(eq(s.taskOccurrences.taskId, task.id))
+        .all();
+      expect(occ.find((o) => o.completedAt)).toMatchObject({
+        occurrenceDate: dueAt,
+        completedBy: admin.id,
+      });
+    });
+
+    it("recurring completion records its instance; uncomplete clears it", async () => {
+      const admin = await seedUser(db, { name: "Admin", is_admin: true });
+      const user = snakeUser(admin);
+      const dueAt = todayStr();
+      const task = await core.createTask(db.db, user, {
+        name: "Brush teeth",
+        recurrence_type: "daily",
+        recurrence_interval: 1,
+        recurrence_start_date: dueAt,
+        assigned_ids: [admin.id],
+      });
+
+      // Materialized ahead: the instance for today is scheduled (pending).
+      expect(task.due_at).toBe(dueAt);
+
+      await core.completeTask(db.db, user, task.id);
+
+      const occs = await db.db.select().from(s.taskOccurrences).all();
+      expect(occs.filter((o) => o.taskId === task.id && o.completedAt)).toHaveLength(1);
+      expect(occs.some((o) => o.occurrenceDate === dueAt && o.completedAt)).toBe(true);
+
+      // The completed row still shows checked today (no roll yet).
+      const listed = await core.listTasks(db.db, user);
+      expect(listed.find((t) => t.id === task.id)!.completed_at).toBeTruthy();
+      expect(listed.find((t) => t.id === task.id)!.due_at).toBe(dueAt);
+
+      // Unchecking clears the instance completion (the scheduled row stays).
+      await core.uncompleteTask(db.db, user, task.id);
+      const relisted = await core.listTasks(db.db, user);
+      expect(relisted.find((t) => t.id === task.id)!.completed_at).toBeNull();
+      const day = await db.db
+        .select()
+        .from(s.taskOccurrences)
+        .where(and(eq(s.taskOccurrences.taskId, task.id), eq(s.taskOccurrences.occurrenceDate, dueAt)))
+        .all();
+      expect(day).toHaveLength(1);
+      expect(day[0].completedAt).toBeNull();
+    });
+
+    it("auto-fills the due date for a repeating task created without one", async () => {
+      const admin = await seedUser(db, { name: "Admin", is_admin: true });
+      const user = snakeUser(admin);
+      const today = todayStr();
+      const task = await core.createTask(db.db, user, {
+        name: "Music lesson",
+        recurrence_type: "custom",
+        recurrence_interval: 1,
+        recurrence_period: "week",
+        recurrence_days_of_week: ["TH"],
+        recurrence_start_date: today,
+        assigned_ids: [admin.id],
+      });
+      // A weekly-Thursday task is due on its first scheduled occurrence from
+      // today — this coming Thursday (or today, when created on a Thursday) —
+      // never some past date.
+      const dow = new Date(`${today}T12:00:00`).getDay();
+      const expected = addDays(today, (4 - dow + 7) % 7);
+      expect(task.due_at).toBe(expected);
+    });
+
+    it("resolves a legacy dateless repeating task to its current/next occurrence", async () => {
+      const admin = await seedUser(db, { name: "Admin", is_admin: true });
+      const user = snakeUser(admin);
+      // Simulate a row created before the auto-fill existed: no due date, but
+      // a daily recurrence. Materializing must point it at "today" so it never
+      // vanishes from the list (daily tasks are excluded from Upcoming).
+      const [task] = await db.db
+        .insert(s.tasks)
+        .values({
+          name: "Legacy daily",
+          recurrenceType: "daily",
+          recurrenceInterval: 1,
+          createdAt: todayStr(),
+        })
+        .returning()
+        .all();
+      await db.db.insert(s.taskAssignees).values({ taskId: task.id, userId: admin.id }).run();
+
+      const res = await core.materializeTaskOccurrences(db.db);
+      const [after] = await db.db.select().from(s.tasks).where(eq(s.tasks.id, task.id)).all();
+      expect(after.dueAt).toBe(todayStr());
+      expect(res.inserted).toBeGreaterThan(0);
+    });
+
+    it("materializes pending instances ahead of the rolling row", async () => {
+      const admin = await seedUser(db, { name: "Admin", is_admin: true });
+      const user = snakeUser(admin);
+      const task = await core.createTask(db.db, user, {
+        name: "Laundry",
+        recurrence_type: "custom",
+        recurrence_interval: 1,
+        recurrence_period: "week",
+        recurrence_days_of_week: ["MO", "WE", "FR"],
+        recurrence_start_date: addDays(todayStr(), -20),
+        assigned_ids: [admin.id],
+      });
+
+      const occs = await db.db
+        .select({ date: s.taskOccurrences.occurrenceDate })
+        .from(s.taskOccurrences)
+        .where(eq(s.taskOccurrences.taskId, task.id))
+        .all();
+      // Enough instances to cover the coming week, all pending, all on the
+      // chosen weekdays, no duplicates.
+      const dates = occs.map((o) => o.date);
+      expect(dates.length).toBeGreaterThanOrEqual(10);
+      expect(new Set(dates).size).toBe(dates.length);
+      const dow = dates.map((d) => new Date(`${d}T12:00:00`).getDay());
+      expect(dow.every((d) => [1, 3, 5].includes(d))).toBe(true);
+      const pending = await db.db
+        .select()
+        .from(s.taskOccurrences)
+        .where(eq(s.taskOccurrences.taskId, task.id))
+        .all();
+      expect(pending.every((p) => p.completedAt === null)).toBe(true);
+    });
+
+    it("rolls a completed instance forward once its day has passed", async () => {
+      const admin = await seedUser(db, { name: "Admin", is_admin: true });
+      const user = snakeUser(admin);
+      const today = todayStr();
+      const task = await core.createTask(db.db, user, {
+        name: "Water plants",
+        recurrence_type: "daily",
+        recurrence_interval: 1,
+        recurrence_start_date: today,
+        assigned_ids: [admin.id],
+      });
+      // Simulate arriving the next morning: the row still points at yesterday
+      // but someone had checked it off.
+      const yesterday = addDays(today, -1);
+      await db.db
+        .update(s.tasks)
+        .set({ dueAt: yesterday, completedAt: `${yesterday} 08:30:00`, reviewedAt: null })
+        .where(eq(s.tasks.id, task.id))
+        .run();
+
+      const res = await core.materializeTaskOccurrences(db.db, { task_id: task.id });
+      expect(res.advanced).toBeGreaterThan(0);
+      const rows = await db.db.select().from(s.tasks).where(eq(s.tasks.id, task.id)).all();
+      // Rolled forward to today, cleared for the fresh instance.
+      expect(rows[0].completedAt).toBeNull();
+      expect(rows[0].dueAt).toBe(today);
+      // And that instance already exists as a pending occurrence for the audit.
+      const day = await db.db
+        .select()
+        .from(s.taskOccurrences)
+        .where(and(eq(s.taskOccurrences.taskId, task.id), eq(s.taskOccurrences.occurrenceDate, today)))
+        .all();
+      expect(day).toHaveLength(1);
+      expect(day[0].completedAt).toBeNull();
+    });
+
+    it("rolls a missed (uncompleted) occurrence forward once its day has passed", async () => {
+      const admin = await seedUser(db, { name: "Admin", is_admin: true });
+      const user = snakeUser(admin);
+      const start = addDays(todayStr(), -10);
+      const task = await core.createTask(db.db, user, {
+        name: "Missed daily",
+        recurrence_type: "daily",
+        recurrence_interval: 1,
+        recurrence_start_date: start,
+        due_at: start,
+        assigned_ids: [admin.id],
+      });
+
+      // An uncompleted daily row never lingers as overdue: creating it far in
+      // the past already rolled it to today, so it keeps appearing in the
+      // "today" list instead of dropping out.
+      const [after] = await db.db.select().from(s.tasks).where(eq(s.tasks.id, task.id)).all();
+      expect(after.dueAt).toBe(todayStr());
+      expect(after.completedAt).toBeNull();
+
+      // The missed days remain in task_occurrences as pending instances (the
+      // "review yesterday's tasks" audit still sees them as not done).
+      const occs = await db.db
+        .select({ date: s.taskOccurrences.occurrenceDate, done: s.taskOccurrences.completedAt })
+        .from(s.taskOccurrences)
+        .where(eq(s.taskOccurrences.taskId, task.id))
+        .all();
+      const missed = occs.find((o) => o.date === start);
+      expect(missed).toBeDefined();
+      expect(missed!.done).toBeNull();
+    });
+
+    it("history returns completed and skipped instances for a day", async () => {
+      const admin = await seedUser(db, { name: "Admin", is_admin: true });
+      const bob = await seedUser(db, { name: "Bob" });
+      const dueAt = todayStr();
+      const done = await core.createTask(db.db, snakeUser(admin), {
+        name: "Done chore",
+        recurrence_type: "daily",
+        recurrence_interval: 1,
+        recurrence_start_date: dueAt,
+        assigned_ids: [bob.id],
+      });
+      const skipped = await core.createTask(db.db, snakeUser(admin), {
+        name: "Skipped chore",
+        recurrence_type: "daily",
+        recurrence_interval: 1,
+        recurrence_start_date: dueAt,
+        assigned_ids: [bob.id],
+      });
+      await core.completeTask(db.db, snakeUser(admin), done.id);
+
+      const hist = await core.taskOccurrenceHistory(db.db, dueAt);
+      expect(hist.rows.map((r) => r.task_id).sort((a, b) => a - b)).toEqual(
+        [done.id, skipped.id].sort((a, b) => a - b)
+      );
+      const doneRow = hist.rows.find((r) => r.task_id === done.id)!;
+      const skippedRow = hist.rows.find((r) => r.task_id === skipped.id)!;
+      expect(doneRow.completed_at).toBeTruthy();
+      expect(skippedRow.completed_at).toBeNull();
+      expect(assigneesOf(hist, done.id).map((a) => a.id)).toContain(bob.id);
     });
 
     it("list respects view_others and member scoping", async () => {

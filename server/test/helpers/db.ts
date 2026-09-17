@@ -1,6 +1,7 @@
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { migrationStatements as coreMigrationStatements } from "../../src/core/migrations.js";
+import { ensureTaskOccurrencesTable } from "../../src/modules/tasks/task-occurrences-table.js";
 import Database from "better-sqlite3";
 import type { D1Database, R2Bucket } from "@cloudflare/workers-types";
 import { drizzle as drizzleFromSqlite, type BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
@@ -46,6 +47,7 @@ export const ALL_TABLES = [
   "task_priorities",
   "tasks",
   "task_assignees",
+  "task_occurrences",
   "lists",
   "list_items",
   "meal_plan",
@@ -60,6 +62,10 @@ export const ALL_TABLES = [
 export async function makeSqliteDatabase(): Promise<TestDatabase> {
   const raw = new Database(":memory:");
   for (const stmt of await coreMigrationStatements()) raw.exec(stmt);
+  // The container boots via initModules → module migrate(); the tasks module
+  // applies the guarded task_occurrences rebuild (nullable completed_at) that
+  // the schema migrations can't express, so mirror it here for parity.
+  await ensureTaskOccurrencesTable(raw);
   const sqlite = drizzleFromSqlite(raw);
   const selectAll = (q: string): Record<string, unknown>[] =>
     (raw.prepare(q) as { all(): unknown[] }).all() as Record<string, unknown>[];
@@ -114,8 +120,22 @@ export async function getTestR2(): Promise<R2Bucket> {
 
 export async function makeD1Database(): Promise<TestDatabase> {
   const raw = await ensureMiniflare();
+  // Module migrate() blocks are multi-statement; real D1 only accepts one
+  // statement per prepare/exec, so split exactly like the worker entry does
+  // (d1Raw.exec) before handing each statement to the raw binding.
   const d1Sql = {
-    exec: (s: string) => raw.exec(s),
+    exec: (s: string) => {
+      // Miniflare's exec() rejects multi-line DDL, so split into single
+      // statements and run each via prepare() — same as the worker entry
+      // (d1Raw.exec) does against real D1.
+      for (const statement of s
+        .split(/;\s*\n/)
+        .map((p) => p.trim().replace(/;\s*$/, ""))
+        .filter(Boolean)) {
+        raw.prepare(statement).run();
+      }
+      return undefined;
+    },
     prepare: (q: string) =>
       ({
         run: () => raw.prepare(q).run(),
@@ -126,6 +146,8 @@ export async function makeD1Database(): Promise<TestDatabase> {
     for (const stmt of await coreMigrationStatements()) {
       await (d1Sql.prepare(stmt) as { run(): Promise<unknown> }).run();
     }
+    // Same module-migrate parity as the sqlite harness (see makeSqliteDatabase).
+    await ensureTaskOccurrencesTable(d1Sql);
     d1Migrated = true;
   }
   const d1 = drizzleFromD1(raw);

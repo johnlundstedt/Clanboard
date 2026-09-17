@@ -28,7 +28,12 @@ app.get("/reverse-geocode", (c) =>
 );
 
 app.get("/", (c) =>
-  respond(c, () => core.getDashboard(containerDb, { user_id: c.req.query("user_id") }))
+  respond(c, () =>
+    core.getDashboard(containerDb, {
+      user_id: c.req.query("user_id"),
+      timezone: c.get("timezone"),
+    })
+  )
 );
 
 export default {

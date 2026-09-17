@@ -46,6 +46,37 @@ export function idempotentize(sql: string): string {
     .replace(/^CREATE INDEX\s+([`"])/i, "CREATE INDEX IF NOT EXISTS $1");
 }
 
+// Extract table + column from a drizzle-generated `ALTER TABLE ... ADD`
+// statement so re-runs can skip columns that already exist.
+export function parseAlterAdd(sql: string): { table: string; column: string } | null {
+  const m = /^ALTER TABLE\s+[`"]?([A-Za-z0-9_]+)[`"]?\s+ADD(?:\s+COLUMN)?\s+[`"]?([A-Za-z0-9_]+)[`"]?/i.exec(
+    sql.trim()
+  );
+  if (!m) return null;
+  return { table: m[1], column: m[2] };
+}
+
+// Portable column-existence check (PRAGMA table_info works on SQLite, D1, and
+// better-sqlite3; .all() is available on every adapter shape). Normalizes the
+// two all() shapes: an array (better-sqlite3, worker d1Raw) or a D1 response
+// with a .results array (raw D1 / test harness).
+export async function tableHasColumn(
+  db: MigratableDatabase,
+  table: string,
+  column: string
+): Promise<boolean> {
+  const stmt = db.prepare(`PRAGMA table_info("${table}")`) as {
+    all(): unknown | Promise<unknown>;
+  };
+  const res = await stmt.all();
+  const rows = (Array.isArray(res)
+    ? res
+    : (res as { results?: Array<{ name?: string }> }).results ?? []) as Array<{
+    name?: string;
+  }>;
+  return rows.some((r) => r.name === column);
+}
+
 // Read + parse the migration SQL directory into a statement list (Node only;
 // the Worker uses the embedded D1_SCHEMA text instead).
 export async function migrationStatements(dir = "drizzle"): Promise<string[]> {
@@ -58,8 +89,9 @@ export async function migrationStatements(dir = "drizzle"): Promise<string[]> {
 // Apply a parsed statement list (or the SQL directory, Node-only) to a
 // portable database. Options:
 //   idempotent — rewrite bare CREATE TABLE/INDEX to the IF NOT EXISTS form
-//                before executing, so re-running against a provisioned DB is
-//                a no-op rather than an error.
+//                and skip ALTER TABLE ... ADD COLUMN statements whose column
+//                already exists, so re-running against a provisioned DB is a
+//                no-op rather than an error.
 export async function applyMigrationStatements(
   db: MigratableDatabase,
   input: string | string[] = "drizzle",
@@ -71,9 +103,29 @@ export async function applyMigrationStatements(
   const statements = Array.isArray(input) ? input : await migrationStatements(input);
   let count = 0;
   for (const raw of statements) {
+    if (opts.idempotent) {
+      const add = parseAlterAdd(raw);
+      if (add && (await tableHasColumn(db, add.table, add.column))) {
+        continue;
+      }
+    }
     const sql = opts.idempotent ? idempotentize(raw) : raw;
-    await db.exec(sql);
+    await runStatement(db, sql);
     count += 1;
   }
   return count;
+}
+
+// Execute a single DDL statement. Prefers prepare().run(), which handles
+// multi-line statements on every backend (D1/Miniflare's exec() rejects SQL
+// spanning newlines). Falls back to exec() for adapters that only expose it.
+async function runStatement(db: MigratableDatabase, sql: string): Promise<void> {
+  const prepared = db.prepare(sql) as { run?: () => unknown } | null;
+  if (prepared && typeof prepared.run === "function") {
+    await prepared.run();
+    return;
+  }
+  let execSql = sql;
+  if (!/;\s*$/.test(execSql)) execSql += ";";
+  await db.exec(execSql);
 }

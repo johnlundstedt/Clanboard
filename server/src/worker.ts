@@ -36,7 +36,9 @@ import { initSecurity } from "./web/security.js";
 import { changeLog } from "./core/changes.js";
 import { initContainerDb, containerDb } from "./core/container-db.js";
 import { hashPassword, memberEnabledModules, publicUser } from "./core/auth.js";
-import { runSyncAll } from "./core/calendar.js";
+import { initEmailConfig } from "./core/email.js";
+import { initCalendarConfig, runSyncAll } from "./core/calendar.js";
+import { materializeTaskOccurrences } from "./core/tasks.js";
 import { users } from "./schema.js";
 import {
   registerModule,
@@ -58,6 +60,8 @@ export interface Env {
   SESSION_SECRET: string;
   ADMIN_NAME?: string;
   ADMIN_PASSWORD?: string;
+  RESEND_API_KEY?: string;
+  GOOGLE_API_KEY?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -191,6 +195,9 @@ async function ensureApp(env: Env): Promise<void> {
     const security = createSecurity(db, secret, true);
     initSecurity(security);
 
+    initEmailConfig({ resendApiKey: env.RESEND_API_KEY ?? null });
+    initCalendarConfig({ googleApiKey: env.GOOGLE_API_KEY ?? null });
+
     await ensureAdmin(env);
 
     // auth is mounted separately below (login must not require a session) and is
@@ -281,11 +288,12 @@ export default {
   },
 
   // Cron-triggered background work. The container runs module jobs on in-proc
-  // timers; here the calendar sync (the only background job today) runs on a
-  // schedule instead. Guards as a no-op while there are no connections.
+  // timers; here the calendar sync and task-instance materialization (the only
+  // background jobs today) run on a schedule instead. Guards as a no-op while
+  // there are no calendar connections.
   async scheduled(controller: ScheduledController, env: Env): Promise<void> {
     await ensureApp(env);
-    const result = await runSyncAll(containerDb);
+    await Promise.all([runSyncAll(containerDb), materializeTaskOccurrences(containerDb)]);
     controller.noRetry();
   },
 };
