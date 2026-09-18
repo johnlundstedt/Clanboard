@@ -5,6 +5,7 @@ import { numParam, readJson, requireCap, respond } from "../../web/helpers.js";
 import { requireAdmin } from "../../web/security.js";
 import * as core from "../../core/tasks.js";
 import { ensureTaskOccurrencesTable } from "./task-occurrences-table.js";
+import { ensureTaskSchemaCleanup } from "./task-schema-cleanup.js";
 
 async function migrate(db) {
   await db.exec(`
@@ -16,20 +17,11 @@ async function migrate(db) {
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
-    CREATE TABLE IF NOT EXISTS task_priorities (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT NOT NULL UNIQUE,
-      sort INTEGER NOT NULL DEFAULT 0,
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
-
     CREATE TABLE IF NOT EXISTS tasks (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,
       description TEXT,
       category_id INTEGER REFERENCES task_categories(id) ON DELETE SET NULL,
-      priority_id INTEGER REFERENCES task_priorities(id) ON DELETE SET NULL,
-      dollar_value REAL,
       due_at TEXT,
       requires_adult_review INTEGER NOT NULL DEFAULT 0,
       completed_at TEXT,
@@ -62,6 +54,12 @@ async function migrate(db) {
   // legacy NOT NULL completed_at columns (see task-occurrences-table.js).
   await ensureTaskOccurrencesTable(db);
 
+  // Drop the removed priorities / dollar-value feature set from legacy
+  // databases: rebuilds `tasks` without priority_id / dollar_value, drops the
+  // orphaned task_priorities table, and clears the stale admin settings
+  // (guarded, so it's a no-op on databases that never had them).
+  await ensureTaskSchemaCleanup(db);
+
   const cols = (await db.prepare("PRAGMA table_info(tasks)").all()).map((c) => c.name);
 
   // Add the icon column for databases created before it existed
@@ -70,12 +68,6 @@ async function migrate(db) {
   }
   if (!cols.includes("category_id")) {
     await db.exec("ALTER TABLE tasks ADD COLUMN category_id INTEGER REFERENCES task_categories(id) ON DELETE SET NULL");
-  }
-  if (!cols.includes("priority_id")) {
-    await db.exec("ALTER TABLE tasks ADD COLUMN priority_id INTEGER REFERENCES task_priorities(id) ON DELETE SET NULL");
-  }
-  if (!cols.includes("dollar_value")) {
-    await db.exec("ALTER TABLE tasks ADD COLUMN dollar_value REAL");
   }
 
   // Recurrence redesign: add interval/period/due_time columns as they appear in
@@ -121,8 +113,8 @@ async function migrate(db) {
     }
   }
 
-  // Ensure task_categories has an is_default column and seed the initial
-  // categories (Chores/School/Household) with Chores as the default.
+  // Seed the initial categories (Chores/School/Household) with Chores as the
+  // default.
   const catCols = (await db.prepare("PRAGMA table_info(task_categories)").all()).map((c) => c.name);
   if (!catCols.includes("is_default")) {
     await db.exec("ALTER TABLE task_categories ADD COLUMN is_default INTEGER NOT NULL DEFAULT 0");
@@ -142,30 +134,13 @@ async function migrate(db) {
       if (first) await db.prepare("UPDATE task_categories SET is_default = 1 WHERE id = ?").run(first.id);
     }
   }
-
-  // Seed the initial priorities: High, Medium, Low.
-  await db.exec(`
-    CREATE TABLE IF NOT EXISTS task_priorities (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT NOT NULL UNIQUE,
-      sort INTEGER NOT NULL DEFAULT 0,
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
-  `);
-  const priCount = (await db.prepare("SELECT COUNT(*) AS c FROM task_priorities").get()).c;
-  if (priCount === 0) {
-    const ins = db.prepare("INSERT INTO task_priorities (name, sort) VALUES (?, ?)");
-    await ins.run("High", 1);
-    await ins.run("Medium", 2);
-    await ins.run("Low", 3);
-  }
 }
 
 const app = new Hono();
 
-// --- Feature flags (admin-managed via /admin/settings) ------------------------
-// Whether categories / priorities / dollar values are enabled for the household.
-// Any authenticated user can read these so the task form can adapt.
+// --- Feature flag (admin-managed via /admin/settings) ------------------------
+// Whether categories are enabled for the household. Any authenticated user can
+// read this so the task form can adapt.
 app.get("/settings", (c) => respond(c, () => core.taskSettings(containerDb)));
 
 // --- Task categories (admin-managed) -----------------------------------------
@@ -190,33 +165,6 @@ app.patch("/categories/:id", requireAdmin, (c) =>
 app.delete("/categories/:id", requireAdmin, (c) =>
   respond(c, async () => {
     await core.deleteCategory(containerDb, numParam(c, "id"));
-    notifyTasks();
-    return null;
-  }, { status: 204 })
-);
-
-// --- Task priorities (admin-managed) -----------------------------------------
-app.get("/priorities", (c) => respond(c, () => core.listPriorities(containerDb)));
-
-app.post("/priorities", requireAdmin, (c) =>
-  respond(c, async () => {
-    const priority = await core.createPriority(containerDb, await readJson(c));
-    notifyTasks();
-    return priority;
-  }, { status: 201 })
-);
-
-app.patch("/priorities/:id", requireAdmin, (c) =>
-  respond(c, async () => {
-    const priority = await core.updatePriority(containerDb, numParam(c, "id"), await readJson(c));
-    notifyTasks();
-    return priority;
-  })
-);
-
-app.delete("/priorities/:id", requireAdmin, (c) =>
-  respond(c, async () => {
-    await core.deletePriority(containerDb, numParam(c, "id"));
     notifyTasks();
     return null;
   }, { status: 204 })

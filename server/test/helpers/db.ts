@@ -2,6 +2,7 @@ import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { migrationStatements as coreMigrationStatements } from "../../src/core/migrations.js";
 import { ensureTaskOccurrencesTable } from "../../src/modules/tasks/task-occurrences-table.js";
+import { ensureTaskSchemaCleanup } from "../../src/modules/tasks/task-schema-cleanup.js";
 import { ensureListItemsColumns } from "../../src/modules/lists/list-items-columns.js";
 import Database from "better-sqlite3";
 import type { D1Database, R2Bucket } from "@cloudflare/workers-types";
@@ -45,7 +46,6 @@ export const ALL_TABLES = [
   "user_modules",
   "sessions",
   "task_categories",
-  "task_priorities",
   "tasks",
   "task_assignees",
   "task_occurrences",
@@ -68,6 +68,7 @@ export async function makeSqliteDatabase(): Promise<TestDatabase> {
   // the schema migrations can't express, so mirror it here for parity.
   await ensureTaskOccurrencesTable(raw);
   await ensureListItemsColumns(raw);
+  await ensureTaskSchemaCleanup(raw);
   const sqlite = drizzleFromSqlite(raw);
   const selectAll = (q: string): Record<string, unknown>[] =>
     (raw.prepare(q) as { all(): unknown[] }).all() as Record<string, unknown>[];
@@ -106,6 +107,10 @@ async function ensureMiniflare(): Promise<D1Database> {
   miniflare = new Miniflare({
     modules: true,
     script: `export default { fetch() { return new Response("ok"); } }`,
+    // In-memory storage: a previous aborted provisioning (or another vitest
+    // worker in the same run) would otherwise leak schema into the default
+    // disk-backed location and break the "fresh database" guarantee.
+    persist: false,
     d1Databases: ["CLANBOARD"],
     r2Buckets: ["UPLOADS"],
   });
@@ -151,6 +156,7 @@ export async function makeD1Database(): Promise<TestDatabase> {
     // Same module-migrate parity as the sqlite harness (see makeSqliteDatabase).
     await ensureTaskOccurrencesTable(d1Sql);
     await ensureListItemsColumns(d1Sql);
+    await ensureTaskSchemaCleanup(d1Sql);
     d1Migrated = true;
   }
   const d1 = drizzleFromD1(raw);

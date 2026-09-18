@@ -30,7 +30,7 @@ function formatTemp(day, kind) {
   return <strong>{day[val]}{unit}</strong>;
 }
 
-export default function DashboardPage({ user, memberId, member }) {
+export default function DashboardPage({ user, memberId, member, onOpenMemberTasks }) {
   const [data, setData] = useState(null);
   const [quick, setQuick] = useState("");
 
@@ -39,6 +39,13 @@ export default function DashboardPage({ user, memberId, member }) {
   const canQuickAdd =
     adult || user?.is_kiosk ||
     (memberId ? !!caps.create : !!caps.create && !!caps.create_unassigned);
+
+  // A member row jumps straight to that member's Today view on the Tasks page.
+  // Only viewers who can see everyone's tasks (kiosk, admin, or view_others) get
+  // the link — otherwise the list is server-scoped to the viewer and the hop
+  // would land on an empty page with no way back.
+  const canOpenTasks = !!user?.is_kiosk || adult || !!caps.view_others;
+  const openTasks = canOpenTasks && onOpenMemberTasks ? onOpenMemberTasks : null;
 
   const refresh = useCallback(async () => {
     setData(await getDashboard(memberId || undefined));
@@ -107,6 +114,23 @@ export default function DashboardPage({ user, memberId, member }) {
         </div>
       )}
 
+      {/* Today's meals */}
+      <div className="card" style={{ marginBottom: "1rem" }}>
+        <h2 style={{ marginTop: 0 }}>Today's meals</h2>
+<div className="row wrap" style={{ gap: "1rem" }}>
+            {MEAL_SLOTS.map(([slot, label, Icon]) => (
+              <div key={slot} style={{ minWidth: 140, flex: 1 }}>
+                <div className="small muted" style={{ textTransform: "uppercase", letterSpacing: "0.04em", fontSize: "0.7rem" }}>
+                  <Icon size={14} style={{ verticalAlign: "-2px" }} /> {label}
+                </div>
+                <div style={{ fontSize: "1rem", fontWeight: 500, marginTop: "2px" }}>
+                  {data.todayMeals?.[slot] ? data.todayMeals[slot] : <span className="muted">—</span>}
+                </div>
+              </div>
+            ))}
+          </div>
+      </div>
+
       {/* Quick add */}
       {canQuickAdd && (
         <div className="card" style={{ marginBottom: "1rem" }}>
@@ -125,23 +149,6 @@ export default function DashboardPage({ user, memberId, member }) {
         </div>
       )}
 
-      {/* Today's meals */}
-      <div className="card" style={{ marginBottom: "1rem" }}>
-        <h2 style={{ marginTop: 0 }}>Today's meals</h2>
-        <div className="row wrap" style={{ gap: "1rem" }}>
-          {MEAL_SLOTS.map(([slot, label, Icon]) => (
-            <div key={slot} style={{ minWidth: 140, flex: 1 }}>
-              <div className="small muted" style={{ textTransform: "uppercase", letterSpacing: "0.04em", fontSize: "0.7rem" }}>
-                <Icon size={14} style={{ verticalAlign: "-2px" }} /> {label}
-              </div>
-              <div style={{ fontSize: "1rem", fontWeight: 500, marginTop: "2px" }}>
-                {data.todayMeals?.[slot] ? data.todayMeals[slot] : <span className="muted">—</span>}
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
       {/* What needs to be done today */}
       <div className="card" style={{ marginBottom: "1rem" }}>
         <h2 style={{ marginTop: 0 }}>Today's tasks</h2>
@@ -151,11 +158,18 @@ export default function DashboardPage({ user, memberId, member }) {
         )}
 
         {childRows.map(({ child, todays }) => (
-          <ChildSection key={child.id} child={child} todays={todays} onToggle={toggleTask} />
+          <ChildSection key={child.id} child={child} todays={todays} onToggle={toggleTask} onOpen={openTasks} />
         ))}
 
         {doneChildren.map(({ child, completed_today_count }) => (
-          <div key={child.id} className="child-progress">
+          <div
+            key={child.id}
+            className={`child-progress${openTasks ? " clickable" : ""}`}
+            role={openTasks ? "button" : undefined}
+            tabIndex={openTasks ? 0 : undefined}
+            onClick={openTasks ? () => openTasks(child.id) : undefined}
+            onKeyDown={openTasks ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openTasks(child.id); } } : undefined}
+          >
             <Avatar user={child} />
             <div>
               <strong>{child.name}</strong>
@@ -204,21 +218,31 @@ export default function DashboardPage({ user, memberId, member }) {
   );
 }
 
-function ChildSection({ child, todays, onToggle }) {
+function ChildSection({ child, todays, onToggle, onOpen }) {
   const done = todays.filter((t) => t.completed_at).length;
   const pct = todays.length ? Math.round((done / todays.length) * 100) : 100;
+  // Right-hand list shows only what's still left to do. Done tasks are kept out
+  // so the text stays short and the progress bar stays full-width on every row.
+  // Hiding the list on phones (`.hide-narrow`) keeps the bar readable.
+  const outstanding = todays.filter((t) => !t.completed_at);
 
   return (
-    <div className="child-progress">
-      <Avatar user={child} />
-      <div>
+    <div
+      className={`child-progress${onOpen ? " clickable" : ""}`}
+      role={onOpen ? "button" : undefined}
+      tabIndex={onOpen ? 0 : undefined}
+      onClick={onOpen ? () => onOpen(child.id) : undefined}
+      onKeyDown={onOpen ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onOpen(child.id); } } : undefined}
+    >
+      <Avatar user={child} className="child-avatar" />
+      <div className="child-meta">
         <strong>{child.name}</strong>
         <span className="muted small"> · {done}/{todays.length} done</span>
-        <div className="progress-track" style={{ marginTop: "4px" }}>
-          <div className="progress-fill" style={{ width: `${pct}%` }} />
-        </div>
       </div>
-      <span className="small muted">{todays.map((t) => t.name).join(", ") || "—"}</span>
+      <span className="small muted child-tasks hide-narrow">{outstanding.map((t) => t.name).join(", ") || "—"}</span>
+      <div className="progress-track">
+        <div className="progress-fill" style={{ width: `${pct}%` }} />
+      </div>
     </div>
   );
 }

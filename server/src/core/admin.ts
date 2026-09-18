@@ -152,8 +152,6 @@ export interface AdminSettings {
   weather_location: string | null;
   weather_units: string;
   tasks_enable_categories: boolean;
-  tasks_enable_priorities: boolean;
-  tasks_enable_dollar: boolean;
   lists_autodelete_enabled: boolean;
   lists_autodelete_minutes: number;
   email_configured: boolean;
@@ -168,8 +166,6 @@ export async function getAdminSettings(db: DbClient): Promise<AdminSettings> {
     weather_location: await getSetting(db, "weather_location"),
     weather_units: (await getSetting(db, "weather_units")) || "metric",
     tasks_enable_categories: (await getSetting(db, "tasks_enable_categories")) !== "0",
-    tasks_enable_priorities: (await getSetting(db, "tasks_enable_priorities")) !== "0",
-    tasks_enable_dollar: (await getSetting(db, "tasks_enable_dollar")) === "1",
     lists_autodelete_enabled: (await getSetting(db, "lists_autodelete_enabled")) === "1",
     lists_autodelete_minutes: Number(await getSetting(db, "lists_autodelete_minutes")) || 60,
     email_configured: await emailConfigured(db),
@@ -184,7 +180,7 @@ function flagToStorage(value: unknown, current: string | null): string | null {
 
 // Apply basic household settings. Empty lat/lon clears the value (null).
 export async function updateAdminSettings(db: DbClient, body: Partial<AdminSettings> & Record<string, unknown>) {
-  const { family_name, latitude, longitude, weather_location, weather_units, tasks_enable_categories, tasks_enable_priorities, tasks_enable_dollar, lists_autodelete_enabled, lists_autodelete_minutes, site_url } = body;
+  const { family_name, latitude, longitude, weather_location, weather_units, tasks_enable_categories, lists_autodelete_enabled, lists_autodelete_minutes, site_url } = body;
   if (family_name !== undefined) await setSetting(db, "family_name", String(family_name));
   if (latitude !== undefined) await setSetting(db, "latitude", latitude === "" || latitude == null ? null : String(latitude));
   if (longitude !== undefined) await setSetting(db, "longitude", longitude === "" || longitude == null ? null : String(longitude));
@@ -195,12 +191,6 @@ export async function updateAdminSettings(db: DbClient, body: Partial<AdminSetti
   }
   if (tasks_enable_categories !== undefined) {
     await setSetting(db, "tasks_enable_categories", flagToStorage(tasks_enable_categories, await getSetting(db, "tasks_enable_categories")));
-  }
-  if (tasks_enable_priorities !== undefined) {
-    await setSetting(db, "tasks_enable_priorities", flagToStorage(tasks_enable_priorities, await getSetting(db, "tasks_enable_priorities")));
-  }
-  if (tasks_enable_dollar !== undefined) {
-    await setSetting(db, "tasks_enable_dollar", flagToStorage(tasks_enable_dollar, await getSetting(db, "tasks_enable_dollar")));
   }
   if (lists_autodelete_enabled !== undefined) {
     await setSetting(db, "lists_autodelete_enabled", flagToStorage(lists_autodelete_enabled, await getSetting(db, "lists_autodelete_enabled")));

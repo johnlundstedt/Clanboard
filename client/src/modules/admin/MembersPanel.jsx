@@ -74,15 +74,16 @@ export default function MembersPanel() {
                 {m.locked && <span className="badge amber" style={{ marginLeft: "0.4rem" }}>locked</span>}
                 {m.role_id && <span className="badge" style={{ marginLeft: "0.4rem" }}>{roleName(m, roles)}</span>}
                 {isBirthdayToday(m.birthday) && <span className="badge amber" style={{ marginLeft: "0.4rem" }}>🎂 today</span>}
-                <div className="small muted">
+                <div className="small muted" style={{ display: "flex", flexWrap: "wrap", columnGap: "0.4rem" }}>
                   {m.system_account
                     ? "system account"
                     : [
-                        m.email ? `Email ${m.email}` : m.login_enabled ? "no email set" : "",
-                        m.login_enabled && m.must_change_password ? "must change password" : "",
-                        m.birthday ? `Birthday ${formatBirthday(m.birthday)} · age ${calculateAge(m.birthday)}` : "",
-                        m.photo_url ? "photo" : "",
-                      ].filter(Boolean).join(" · ")}
+                        m.email
+                          ? <span className="hide-narrow">Email {m.email}</span>
+                          : m.login_enabled ? "no email set" : null,
+                        m.login_enabled && m.must_change_password ? "must change password" : null,
+                        m.birthday ? `Birthday ${formatBirthday(m.birthday)} · age ${calculateAge(m.birthday)}` : null,
+                      ].filter(Boolean).map((node, i) => <span key={i}>{node}</span>)}
                 </div>
               </div>
               {m.locked && (

@@ -131,7 +131,7 @@ export const setMemberModule = (id, module, enabled) =>
 export const uploadPhoto = (data, name) =>
   req("/admin/photos", { method: "POST", body: JSON.stringify({ data, name }) });
 
-// --- Task config (categories / priorities) -----------------------------------
+// --- Task config (categories) ------------------------------------------------
 export const getTaskSettings = () => req("/tasks/settings");
 export const getTaskCategories = () => req("/tasks/categories");
 export const createTaskCategory = (c) =>
@@ -140,10 +140,3 @@ export const updateTaskCategory = (id, c) =>
   req(`/tasks/categories/${id}`, { method: "PATCH", body: JSON.stringify(c) });
 export const deleteTaskCategory = (id) =>
   req(`/tasks/categories/${id}`, { method: "DELETE" });
-export const getTaskPriorities = () => req("/tasks/priorities");
-export const createTaskPriority = (p) =>
-  req("/tasks/priorities", { method: "POST", body: JSON.stringify(p) });
-export const updateTaskPriority = (id, p) =>
-  req(`/tasks/priorities/${id}`, { method: "PATCH", body: JSON.stringify(p) });
-export const deleteTaskPriority = (id) =>
-  req(`/tasks/priorities/${id}`, { method: "DELETE" });

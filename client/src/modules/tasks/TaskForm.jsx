@@ -52,12 +52,10 @@ function initialInterval(initial) {
   return Number.isInteger(n) && n > 0 ? n : 1;
 }
 
-export default function TaskForm({ members, initial, defaultAssigneeIds, onSubmit, onCancel, categories, priorities, settings, canDelete, onDelete }) {
+export default function TaskForm({ members, initial, defaultAssigneeIds, onSubmit, onCancel, categories, settings, canDelete, onDelete }) {
   const [name, setName] = useState(initial?.name || "");
   const [description, setDescription] = useState(initial?.description || "");
   const [categoryId, setCategoryId] = useState(initial?.category_id || "");
-  const [priorityId, setPriorityId] = useState(initial?.priority_id || "");
-  const [dollarValue, setDollarValue] = useState(initial?.dollar_value ?? "");
   const [assignedIds, setAssignedIds] = useState(() => {
     if (initial?.assignees?.length) return initial.assignees.map((a) => a.id);
     return defaultAssigneeIds || [];
@@ -110,8 +108,6 @@ export default function TaskForm({ members, initial, defaultAssigneeIds, onSubmi
       name,
       description,
       category_id: categoryId ? Number(categoryId) : null,
-      priority_id: priorityId ? Number(priorityId) : null,
-      dollar_value: dollarValue !== "" ? (Number(dollarValue) || null) : null,
       assigned_ids: assignedIds.length ? assignedIds : null,
       requires_adult_review: requiresAdultReview,
       icon,
@@ -332,31 +328,6 @@ export default function TaskForm({ members, initial, defaultAssigneeIds, onSubmi
                   <option key={c.id} value={c.id}>{c.name}</option>
                 ))}
               </select>
-            </label>
-          )}
-          {settings?.enable_priorities && (
-            <label className="row">
-              Priority:
-              <select value={priorityId || ""} onChange={(e) => setPriorityId(e.target.value)}>
-                <option value="">None</option>
-                {(priorities || []).map((p) => (
-                  <option key={p.id} value={p.id}>{p.name}</option>
-                ))}
-              </select>
-            </label>
-          )}
-          {settings?.enable_dollar && (
-            <label className="row">
-              Value ($):
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                value={dollarValue}
-                onChange={(e) => setDollarValue(e.target.value)}
-                placeholder="0.00"
-                style={{ width: "6rem" }}
-              />
             </label>
           )}
         </div>

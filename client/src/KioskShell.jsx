@@ -4,7 +4,8 @@ import modules, { getClientModule } from "./modules/index.js";
 import Avatar from "./components/Avatar.jsx";
 import { getModules, getMembers, getTasks, logout } from "./api.js";
 import { usePolling } from "./realtime.js";
-import { isFullyDone, isOutstandingDueTodayOrOverdue, todayStr } from "./modules/tasks/taskUtils.js";
+import TitleBar from "./TitleBar.jsx";
+import { isFullyDone, isOutstanding, todayStr } from "./modules/tasks/taskUtils.js";
 import Logo from "./components/Logo.jsx";
 
 // Wall display: keep the screen awake for as long as the kiosk is open.
@@ -96,8 +97,9 @@ export default function KioskShell({ user, onLogout }) {
   const today = (tasks[0] && tasks[0].today) || todayStr();
 
   // Per-member task counters for the sidebar badges: number shows outstanding
-  // tasks due today or overdue; green ✓ when everything is fully done; nothing
-  // when the member has no assigned tasks (or only tasks due in the future).
+  // tasks (no due date, or due today or overdue); green ✓ when everything is
+  // fully done; nothing when the member has no assigned tasks (or only tasks
+  // due in the future).
   const counts = useMemo(() => {
     const c = {};
     for (const m of sidebarMembers) {
@@ -105,15 +107,15 @@ export default function KioskShell({ user, onLogout }) {
       c[m.id] = {
         total: mine.length,
         incomplete: mine.filter((t) => !isFullyDone(t)).length,
-        dueCount: mine.filter((t) => isOutstandingDueTodayOrOverdue(t, today)).length,
+        dueCount: mine.filter((t) => isOutstanding(t, today)).length,
       };
     }
     return c;
   }, [tasks, sidebarMembers, today]);
 
-  // Whole-household urgent-task count for the kiosk header badge.
+  // Whole-household outstanding-task count for the kiosk header badge.
   const familyDueCount = useMemo(
-    () => tasks.filter((t) => isOutstandingDueTodayOrOverdue(t, today)).length,
+    () => tasks.filter((t) => isOutstanding(t, today)).length,
     [tasks, today]
   );
 
@@ -150,10 +152,18 @@ export default function KioskShell({ user, onLogout }) {
     setActive(defaultFor?.name || "dashboard");
   }
 
+  // A tap on a member's dashboard row selects that member in the sidebar and
+  // opens their Today view on the Tasks module.
+  function openMemberTasks(id) {
+    selectMember(id);
+    setActive("tasks");
+  }
+
   const currentModule = getClientModule(active);
 
   return (
-    <div className="kiosk">
+    <div className="kiosk wco-fill">
+      <TitleBar />
       <nav className="nav">
         <span className="title" style={{ display: "inline-flex", alignItems: "center", fontWeight: 800, flex: 1 }}>
           <Logo size={38} />
@@ -169,7 +179,7 @@ export default function KioskShell({ user, onLogout }) {
             >
               {m.icon && <m.icon size={34} />}
               {m.name === "tasks" && familyDueCount > 0 && (
-                <span className="nav-badge" title={`${familyDueCount} task${familyDueCount === 1 ? "" : "s"} due today or overdue across the whole clan`}>{familyDueCount}</span>
+                <span className="nav-badge" title={`${familyDueCount} task${familyDueCount === 1 ? "" : "s"} outstanding across the whole clan`}>{familyDueCount}</span>
               )}
             </button>
           ))}
@@ -205,7 +215,7 @@ export default function KioskShell({ user, onLogout }) {
                 <Avatar user={m} size="lg" />
                 {counts[m.id]?.total > 0 && (
                   counts[m.id].dueCount > 0
-                    ? <span className="avatar-badge" title={`${counts[m.id].dueCount} task${counts[m.id].dueCount === 1 ? "" : "s"} due today or overdue`}>{counts[m.id].dueCount}</span>
+                    ? <span className="avatar-badge" title={`${counts[m.id].dueCount} task${counts[m.id].dueCount === 1 ? "" : "s"} outstanding`}>{counts[m.id].dueCount}</span>
                     : counts[m.id].incomplete === 0
                       ? <span className="avatar-badge green" title="All tasks done">✓</span>
                       : null
@@ -219,7 +229,7 @@ export default function KioskShell({ user, onLogout }) {
         <div className="kiosk-main">
           <main style={{ maxWidth: 1100, margin: "0 auto", padding: "1rem" }}>
             {currentModule?.page ? (
-              <currentModule.page user={user} memberId={selectedId} member={selected || undefined} />
+              <currentModule.page user={user} memberId={selectedId} member={selected || undefined} onOpenMemberTasks={openMemberTasks} />
             ) : (
               <div className="card">This module isn't available for {selected?.name || "this view"}.</div>
             )}

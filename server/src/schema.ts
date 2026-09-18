@@ -3,7 +3,6 @@ import {
   index,
   integer,
   primaryKey,
-  real,
   sqliteTable,
   text,
   uniqueIndex,
@@ -110,15 +109,6 @@ export const taskCategories = sqliteTable("task_categories", {
     .default(sql`(datetime('now'))`),
 });
 
-export const taskPriorities = sqliteTable("task_priorities", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
-  name: text("name").notNull().unique(),
-  sort: integer("sort").notNull().default(0),
-  createdAt: text("created_at")
-    .notNull()
-    .default(sql`(datetime('now'))`),
-});
-
 export const tasks = sqliteTable("tasks", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   name: text("name").notNull(),
@@ -126,10 +116,6 @@ export const tasks = sqliteTable("tasks", {
   categoryId: integer("category_id").references(() => taskCategories.id, {
     onDelete: "set null",
   }),
-  priorityId: integer("priority_id").references(() => taskPriorities.id, {
-    onDelete: "set null",
-  }),
-  dollarValue: real("dollar_value"),
   dueAt: text("due_at"),
   requiresAdultReview: integer("requires_adult_review", { mode: "boolean" })
     .notNull()

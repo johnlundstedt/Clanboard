@@ -21,7 +21,14 @@ function dispatch(table) {
 }
 
 function notifyAll() {
-  for (const table of listeners.keys()) dispatch(table);
+  // A table change can arrive on several buses a page subscribes to (e.g. the
+  // dashboard polls four), so fire each distinct callback only once.
+  const seen = new Set();
+  for (const table of listeners.keys()) {
+    for (const cb of listeners.get(table)) {
+      if (!seen.has(cb)) { seen.add(cb); cb(); }
+    }
+  }
 }
 
 async function pollOnce() {
@@ -93,3 +100,10 @@ export function usePolling(tables, refresh, _intervalMs) {
 // Kept as a no-op for compatibility — polling is driven by the subscriptions
 // themselves, not by an explicit connect call.
 export function ensureRealtime() {}
+
+// Manual refresh (the installed-PWA title-bar button): ask every page that is
+// currently subscribed to re-pull its data, without touching the change log.
+// This is user-initiated, so the once per table per callback cost is tiny.
+export function requestRefresh() {
+  notifyAll();
+}

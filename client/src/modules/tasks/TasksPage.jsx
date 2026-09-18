@@ -6,10 +6,10 @@ import TaskForm from "./TaskForm.jsx";
 import {
   getTasks, getMembers, createTask, updateTask, deleteTask,
   completeTask, uncompleteTask, reviewTask, unreviewTask,
-  getTaskSettings, getTaskCategories, getTaskPriorities,
+  getTaskSettings, getTaskCategories,
 } from "../../api.js";
 import { usePolling } from "../../realtime.js";
-import { isFullyDone, isOutstandingDueTodayOrOverdue, todayStr } from "./taskUtils.js";
+import { isFullyDone, isOutstanding, todayStr } from "./taskUtils.js";
 
 function addDaysStr(day, n) {
   const d = new Date(`${day}T12:00:00`);
@@ -24,26 +24,35 @@ function daysBetween(later, earlier) {
   return Math.round((Date.UTC(ly, lm - 1, ld) - Date.UTC(ey, em - 1, ed)) / 86400000);
 }
 
-export default function TasksPage({ user, memberId, member }) {
+export default function TasksPage({ user, memberId, member, taskTarget, onTaskTargetConsumed }) {
   const [tasks, setTasks] = useState([]);
   const [members, setMembers] = useState([]);
   const [showingForm, setShowingForm] = useState(false);
   const [editing, setEditing] = useState(null);
-  const [memberFilter, setMemberFilter] = useState(null); // null = everyone
+  // null = everyone; defaults to the logged-in user, or to the member whose
+  // dashboard row was tapped (taskTarget) if we're arriving via that hop.
+  const [memberFilter, setMemberFilter] = useState(
+    () => taskTarget?.memberId ?? (user && !user.is_kiosk ? user.id : null)
+  );
   const [categories, setCategories] = useState([]);
-  const [priorities, setPriorities] = useState([]);
   const [settings, setSettings] = useState({});
+  const [viewMode, setViewMode] = useState(taskTarget?.mode || "today"); // 'today' | 'upcoming' | 'all'
+
+  // The target is one-shot: consume it so the next plain "Tasks" nav starts at
+  // the member's own default view instead of replaying the last dashboard tap.
+  useEffect(() => {
+    if (taskTarget) onTaskTargetConsumed?.();
+  }, [taskTarget, onTaskTargetConsumed]);
 
   const refresh = useCallback(async () => {
-    const [t, m, s, cats, pris] = await Promise.all([
+    const [t, m, s, cats] = await Promise.all([
       getTasks(memberId || undefined), getMembers(), getTaskSettings(),
-      getTaskCategories(), getTaskPriorities(),
+      getTaskCategories(),
     ]);
     setTasks(t);
     setMembers(m);
     setSettings(s);
     setCategories(cats);
-    setPriorities(pris);
   }, [memberId]);
 
   usePolling("tasks", refresh);
@@ -66,13 +75,15 @@ export default function TasksPage({ user, memberId, member }) {
     [members]
   );
 
-  // The list is split into three buckets:
+  // The list is bucketed the same way on every view; the Today / Upcoming / All
+  // toggle picks which buckets are shown:
   //   1. Today's Outstanding — not done, and either due today or (non-repeating
   //      only) overdue. Overdue tasks render with an "Overdue X days" badge.
   //   2. Upcoming — not done, no due date or due within the next 7 days, and
   //      daily repeats are excluded (they live in "today").
   //   3. Today's Completed — anything finished sometime today (its instance or
   //      completed_at date matches today's local date).
+  //   4. All Other — the remainder (completed earlier, due further out, etc.).
   // Repeating tasks are rolled to their next occurrence once a day passes, so
   // only non-repeating tasks can ever be "overdue" in this list.
   const sections = useMemo(() => {
@@ -90,13 +101,17 @@ export default function TasksPage({ user, memberId, member }) {
     const outstanding = [];
     const upcoming = [];
     const completedToday = [];
+    const matched = new Set();
     for (const t of list) {
       const due = t.due_at ? t.due_at.slice(0, 10) : null;
       if (!t.completed_at) {
-        if (due === today || (due && due < today && !t.recurrence_type)) outstanding.push(t);
-        else if (t.recurrence_type !== "daily" && (!due || (due > today && due <= todayPlus7))) upcoming.push(t);
+        if (due === today || (due && due < today && !t.recurrence_type)) {
+          outstanding.push(t); matched.add(t.id);
+        } else if (t.recurrence_type !== "daily" && (!due || (due > today && due <= todayPlus7))) {
+          upcoming.push(t); matched.add(t.id);
+        }
       } else if ((t.completed_at || "").slice(0, 10) === today) {
-        completedToday.push(t);
+        completedToday.push(t); matched.add(t.id);
       }
     }
     outstanding.sort(byDue);
@@ -104,7 +119,8 @@ export default function TasksPage({ user, memberId, member }) {
     completedToday.sort(
       (a, b) => String(b.completed_at).localeCompare(String(a.completed_at)) || a.id - b.id
     );
-    return { outstanding, upcoming, completedToday };
+    const rest = list.filter((t) => !matched.has(t.id)).sort(byDue);
+    return { outstanding, upcoming, completedToday, rest };
   }, [tasks, memberFilter, today]);
 
   const openNew = () => { setEditing(null); setShowingForm(true); };
@@ -175,8 +191,9 @@ export default function TasksPage({ user, memberId, member }) {
         total: mine.length,
         // All not-fully-done tasks (any due date), for the green "all done" ✓.
         incomplete: mine.filter((t) => !isFullyDone(t)).length,
-        // The badge number: outstanding tasks due today or overdue.
-        dueCount: mine.filter((t) => isOutstandingDueTodayOrOverdue(t, today)).length,
+        // The badge number: outstanding tasks (no due date, or due today or
+        // overdue) — the same predicate the dashboard uses for "today's tasks".
+        dueCount: mine.filter((t) => isOutstanding(t, today)).length,
       };
     }
     return c;
@@ -201,11 +218,31 @@ export default function TasksPage({ user, memberId, member }) {
       : `${user.family_name || "Clanboard"} Clan’s Tasks`
     : "Tasks";
 
+  // Show the assignee avatars on each task only on the whole-family view.
+  const showAssignees = showMemberFilter && memberFilter === null;
+
   return (
     <div>
-      <div className="row wrap" style={{ justifyContent: "space-between", marginBottom: "1rem" }}>
+      <div className="row wrap" style={{ justifyContent: "space-between", marginBottom: "1rem", gap: "0.6rem" }}>
         <h1 style={{ margin: 0 }}>{title}</h1>
-        {canCreate && <button className="primary" onClick={openNew}>+ New task</button>}
+        <span className="row" style={{ gap: "0.6rem" }}>
+          <div className="view-toggle" role="group" aria-label="Task view">
+            {[
+              { mode: "today", label: "Today" },
+              { mode: "upcoming", label: "Upcoming" },
+              { mode: "all", label: "All" },
+            ].map(({ mode, label }) => (
+              <button
+                key={mode}
+                className={viewMode === mode ? "active" : ""}
+                onClick={() => setViewMode(mode)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          {canCreate && <button className="primary" onClick={openNew}>+ New task</button>}
+        </span>
       </div>
 
       {(showingForm || editing) && (
@@ -214,7 +251,6 @@ export default function TasksPage({ user, memberId, member }) {
             key={editing?.id ?? "new"}
             members={taskMembers}
             categories={categories}
-            priorities={priorities}
             settings={settings}
             initial={editing}
             defaultAssigneeIds={memberFilter ? [memberFilter] : []}
@@ -248,7 +284,7 @@ export default function TasksPage({ user, memberId, member }) {
                 <Avatar user={m} />
                 {counts[m.id]?.total > 0 && (
                   counts[m.id].dueCount > 0
-                    ? <span className="avatar-badge" title={`${counts[m.id].dueCount} task${counts[m.id].dueCount === 1 ? "" : "s"} due today or overdue`}>{counts[m.id].dueCount}</span>
+                    ? <span className="avatar-badge" title={`${counts[m.id].dueCount} task${counts[m.id].dueCount === 1 ? "" : "s"} outstanding`}>{counts[m.id].dueCount}</span>
                     : counts[m.id].incomplete === 0
                       ? <span className="avatar-badge green" title="All tasks done">✓</span>
                       : null
@@ -261,68 +297,40 @@ export default function TasksPage({ user, memberId, member }) {
       )}
 
       <div style={{ display: "grid", gap: "1.25rem" }}>
-        <TaskSection heading="Today’s Outstanding Tasks" count={sections.outstanding.length}>
-          {sections.outstanding.map((t) => (
-            <TaskRow
-              key={t.id}
-              task={t}
-              user={user}
-              memberById={memberById}
-              adult={adult}
-              today={today}
-              canEdit={canEdit}
-              canReview={canReview}
-              onToggleComplete={toggleComplete}
-              onToggleReview={toggleReview}
-              onEdit={() => { setEditing(t); setShowingForm(false); }}
-            />
+        {[
+          { key: "outstanding", heading: "Today’s Outstanding Tasks", empty: "Nothing outstanding — all caught up!" },
+          { key: "upcoming", heading: "Upcoming Tasks", empty: "No upcoming tasks." },
+          { key: "completedToday", heading: "Today’s Completed Tasks", empty: "No tasks completed today yet." },
+          { key: "rest", heading: "All Other Tasks", empty: "No other tasks." },
+        ]
+          .filter(({ key }) =>
+            viewMode === "today" ? key === "outstanding" || key === "completedToday"
+              : viewMode === "upcoming" ? key === "upcoming"
+                : true
+          )
+          .map(({ key, heading, empty }) => (
+            <TaskSection key={key} heading={heading} count={sections[key].length}>
+              {sections[key].map((t) => (
+                <TaskRow
+                  key={t.id}
+                  task={t}
+                  user={user}
+                  memberById={memberById}
+                  adult={adult}
+                  today={today}
+                  showAssignees={showAssignees}
+                  canEdit={canEdit}
+                  canReview={canReview}
+                  onToggleComplete={toggleComplete}
+                  onToggleReview={toggleReview}
+                  onEdit={() => { setEditing(t); setShowingForm(false); }}
+                />
+              ))}
+              {sections[key].length === 0 && (
+                <div className="card muted">{empty}</div>
+              )}
+            </TaskSection>
           ))}
-          {sections.outstanding.length === 0 && (
-            <div className="card muted">Nothing outstanding — all caught up!</div>
-          )}
-        </TaskSection>
-
-        <TaskSection heading="Upcoming Tasks" count={sections.upcoming.length}>
-          {sections.upcoming.map((t) => (
-            <TaskRow
-              key={t.id}
-              task={t}
-              user={user}
-              memberById={memberById}
-              adult={adult}
-              today={today}
-              canEdit={canEdit}
-              canReview={canReview}
-              onToggleComplete={toggleComplete}
-              onToggleReview={toggleReview}
-              onEdit={() => { setEditing(t); setShowingForm(false); }}
-            />
-          ))}
-          {sections.upcoming.length === 0 && (
-            <div className="card muted">No upcoming tasks.</div>
-          )}
-        </TaskSection>
-
-        <TaskSection heading="Today’s Completed Tasks" count={sections.completedToday.length}>
-          {sections.completedToday.map((t) => (
-            <TaskRow
-              key={t.id}
-              task={t}
-              user={user}
-              memberById={memberById}
-              adult={adult}
-              today={today}
-              canEdit={canEdit}
-              canReview={canReview}
-              onToggleComplete={toggleComplete}
-              onToggleReview={toggleReview}
-              onEdit={() => { setEditing(t); setShowingForm(false); }}
-            />
-          ))}
-          {sections.completedToday.length === 0 && (
-            <div className="card muted">No tasks completed today yet.</div>
-          )}
-        </TaskSection>
       </div>
     </div>
   );
@@ -385,7 +393,7 @@ function dueLabel(task) {
   return label;
 }
 
-function TaskRow({ task, user, memberById, adult, today, canEdit, canReview, onToggleComplete, onToggleReview, onEdit }) {
+function TaskRow({ task, user, memberById, adult, today, showAssignees, canEdit, canReview, onToggleComplete, onToggleReview, onEdit }) {
   const dueDate = task.due_at ? task.due_at.slice(0, 10) : null;
   const overdue = !!dueDate && dueDate < today && !task.completed_at;
   const daysOverdue = overdue ? daysBetween(today, dueDate) : 0;
@@ -418,21 +426,6 @@ function TaskRow({ task, user, memberById, adult, today, canEdit, canReview, onT
         </span>
       )}
           {task.category_name && <span className="badge" style={{ background: "#f0fdf4", color: "#166534" }}>{task.category_name}</span>}
-          {task.priority_name && (
-            <span
-              className="badge"
-              style={
-                task.priority_name === "High"
-                  ? { background: "#fee2e2", color: "#991b1b" }
-                  : task.priority_name === "Low"
-                    ? { background: "#e0f2fe", color: "#0c4a6e" }
-                    : {}
-              }
-            >
-              {task.priority_name}
-            </span>
-          )}
-          {task.dollar_value != null && <span className="badge amber">${Number(task.dollar_value).toFixed(2)}</span>}
           {task.requires_adult_review && (
             fullyDone
               ? <span className="badge green">reviewed ✓</span>
@@ -449,7 +442,16 @@ function TaskRow({ task, user, memberById, adult, today, canEdit, canReview, onT
 
         {task.description && <div className="small muted">{task.description}</div>}
 
-        <div className="small muted">{dueLabel(task)}</div>
+        <div className="small muted">
+          {dueLabel(task)}
+          {showAssignees && (
+            <>
+              {task.assignees && task.assignees.length > 0
+                ? <span className="task-assignee-names"> for {task.assignees.map((a) => a.name).join(" & ")}</span>
+                : <span className="badge amber" style={{ marginLeft: "0.4rem" }}>unassigned</span>}
+            </>
+          )}
+        </div>
       </div>
 
       {canReview && awaitingReview && (

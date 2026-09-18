@@ -19,7 +19,7 @@ const SECTIONS = [
     key: "tasks",
     label: "Tasks",
     icon: ListChecks,
-    desc: "Task categories, priorities, and optional dollar values.",
+    desc: "Task categories, defaults, and the adult-review flag.",
     component: TasksAdminPanel,
   },
   {

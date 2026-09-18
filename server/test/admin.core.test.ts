@@ -85,8 +85,6 @@ for (const backend of backends) {
         expect(settings.family_name).toBeNull();
         expect(settings.weather_units).toBe("metric");
         expect(settings.tasks_enable_categories).toBe(true);
-        expect(settings.tasks_enable_priorities).toBe(true);
-        expect(settings.tasks_enable_dollar).toBe(false);
       });
 
       it("round-trips household settings and flag toggles", async () => {
@@ -96,14 +94,12 @@ for (const backend of backends) {
           longitude: "-122.3",
           weather_units: "imperial",
           tasks_enable_categories: false,
-          tasks_enable_dollar: true,
         });
         let settings = await admin.getAdminSettings(db.db);
         expect(settings.family_name).toBe("Lundstedt");
         expect(settings.latitude).toBe("47.6");
         expect(settings.weather_units).toBe("imperial");
         expect(settings.tasks_enable_categories).toBe(false);
-        expect(settings.tasks_enable_dollar).toBe(true);
 
         // Empty lat/lon clears the stored location
         await admin.updateAdminSettings(db.db, { latitude: "", longitude: "" });

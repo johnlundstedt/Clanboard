@@ -159,6 +159,32 @@ input:focus, select:focus, textarea:focus {
 .member-pick.active { border-color: var(--accent); background: #eff6ff; }
 .member-pick .member-name { font-size: 0.72rem; color: var(--muted); }
 
+/* Task list view toggle: Today / Upcoming / All */
+.view-toggle {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 8px;
+  background: var(--bg-soft, #f3f4f6);
+}
+.view-toggle button {
+  border: 1px solid transparent;
+  background: none;
+  padding: 0.35rem 0.8rem;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+}
+.view-toggle button:hover { color: var(--text); }
+.view-toggle button.active {
+  background: #fff;
+  border-color: var(--accent);
+  color: var(--text);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+
 /* Count / done badge overlaid on the avatar's bottom-right corner */
 .avatar-wrap {
   position: relative;
@@ -406,18 +432,20 @@ input:focus, select:focus, textarea:focus {
     flex-basis: 100%;
   }
   .nav-actions { order: 1; }
+  /* Hide nonessential detail (e.g. email) when space is tight */
+  .hide-narrow { display: none; }
 }
 
-/* Dashboard weather strip: three days side by side, icons only */
+/* Dashboard weather strip: three days side by side, well separated */
 .weather-strip {
   display: flex;
-  gap: 0.5rem;
+  gap: 1.25rem;
 }
 .weather-day {
   flex: 1;
   min-width: 0;
   text-align: center;
-  padding: 0.25rem 0;
+  padding: 0.4rem 0;
 }
 /* Emoji glyphs render at different intrinsic heights (e.g. ☀ vs 🌦), so each
    icon gets a fixed box with the glyph centered inside for a uniform row. */
@@ -430,16 +458,80 @@ input:focus, select:focus, textarea:focus {
   justify-content: center;
 }
 
-/* Dashboard xkcd-style per-child row */
+/* Weather + Today's meals each render as regular full-width cards, stacked
+   top to bottom like the other dashboard panels. */
+
+/* Dashboard xkcd-style per-child row: avatar | name line | task list on the
+   top row, with the progress bar on its own full-width row beneath. */
 .child-progress {
   display: grid;
   grid-template-columns: 44px 1fr auto;
+  grid-template-rows: auto auto;
   align-items: center;
-  gap: 0.75rem;
+  column-gap: 0.75rem;
+  row-gap: 2px;
   padding: 0.5rem 0;
   border-bottom: 1px solid var(--border);
 }
 .child-progress:last-child { border-bottom: none; }
+/* Avatar spans both rows so it stays centered; the member name and the
+   right-hand outstanding-task list share the top row, and the progress bar is
+   a separate item spanning columns 2–3 — so its length is always the full
+   width and never depends on how many task names a member has. */
+.child-progress .child-avatar { grid-row: 1 / span 2; }
+.child-progress .child-meta { align-self: start; }
+.child-progress .child-tasks {
+  align-self: start;
+  padding-top: 2px;
+  min-width: 0;
+}
+.child-progress .progress-track {
+  grid-column: 2 / -1;
+}
+.child-progress.clickable { cursor: pointer; }
+.child-progress.clickable:hover { background: var(--bg-soft, #f3f4f6); }
+@media (hover: none) {
+  .child-progress.clickable:hover { background: none; }
+}
+
+/* Installed desktop PWA: content expands into the OS title-bar area (Window
+   Controls Overlay). The shell is pushed down by the strip's height so its own
+   nav never hides under the window controls, and a slim fixed strip hosts app
+   controls (the refresh button) beside the native minimize/maximize/close. */
+.wco-fill { padding-top: env(titlebar-area-height, 0px); }
+
+.title-bar {
+  position: fixed;
+  z-index: 1000;
+  top: env(titlebar-area-y, 0);
+  left: env(titlebar-area-x, 0);
+  width: env(titlebar-area-width, 100%);
+  height: env(titlebar-area-height, 32px);
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 0 4px;
+  box-sizing: border-box;
+  -webkit-app-region: drag;
+  user-select: none;
+}
+.title-bar button { -webkit-app-region: no-drag; }
+.title-bar-refresh {
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+}
+.title-bar-refresh:hover { background: var(--bg-soft, #f3f4f6); color: var(--text); }
+@keyframes titlebar-spin { to { transform: rotate(360deg); } }
+.title-bar-refresh .spin { animation: titlebar-spin 0.6s linear; }
+.login-wrap { padding-top: env(titlebar-area-height, 1rem); }
 
 .progress-track {
   height: 10px;

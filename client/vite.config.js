@@ -15,6 +15,7 @@ export default defineConfig({
         theme_color: "#2563eb",
         background_color: "#f4f6f8",
         display: "standalone",
+        display_override: ["window-controls-overlay"],
         start_url: "/",
         icons: [
           { src: "/clan_board_logo_192x192.png", sizes: "192x192", type: "image/png" },

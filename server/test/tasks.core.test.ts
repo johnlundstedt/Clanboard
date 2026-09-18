@@ -45,11 +45,6 @@ async function seedCategory(db: TestDatabase, opts: { name?: string; is_default?
   return c;
 }
 
-async function seedPriority(db: TestDatabase, name = "High") {
-  const [p] = await db.db.insert(s.taskPriorities).values({ name, sort: 1 }).returning().all();
-  return p;
-}
-
 async function seedUser(
   db: TestDatabase,
   opts: { name?: string; is_admin?: boolean; role_id?: number | null } = {}
@@ -94,14 +89,12 @@ for (const backend of backends) {
       const admin = await seedUser(db, { name: "Admin", is_admin: true });
       const bob = await seedUser(db, { name: "Bob" });
       const cat = await seedCategory(db);
-      const pri = await seedPriority(db);
       const user = snakeUser(admin);
 
       const task = await core.createTask(db.db, user, {
         name: "Take out trash",
         description: "before Tuesday",
         category_id: cat.id,
-        priority_id: pri.id,
         due_at: "2026-09-12",
         assigned_ids: [bob.id],
         icon: "trash",
@@ -110,7 +103,6 @@ for (const backend of backends) {
       expect(task.name).toBe("Take out trash");
       expect(task.category_id).toBe(cat.id);
       expect(task.category_name).toBe("Chores");
-      expect(task.priority_name).toBe("High");
       expect(task.requires_adult_review).toBe(0);
       expect(task.assignees).toEqual([{ id: bob.id, name: "Bob" }]);
       expect(task.assigned_to).toBe(bob.id);
@@ -173,16 +165,6 @@ for (const backend of backends) {
       const diffCase = await core.createCategory(db.db, { name: "chores" });
       expect(diffCase.id).toBeGreaterThan(second.id);
       await expect(core.createCategory(db.db, { name: "chores" })).rejects.toMatchObject({ status: 400 });
-    });
-
-    it("priorities auto-increment sort order", async () => {
-      const admin = await seedUser(db, { name: "Admin", is_admin: true });
-      const low = await core.createPriority(db.db, { name: "Low" });
-      const high = await core.createPriority(db.db, { name: "High" });
-      expect(high.sort).toBeGreaterThan(low.sort);
-      await core.updatePriority(db.db, high.id, { name: "Urgent" });
-      const ups = await core.listPriorities(db.db);
-      expect(ups.find((p) => p.id === high.id)!.name).toBe("Urgent");
     });
 
     it("completing a repeating task keeps its due date and marks the instance", async () => {

@@ -26,10 +26,17 @@ export interface MigratableDatabase {
   close?(): unknown;
 }
 
-// Split the joined drizzle SQL text into individual statements.
+// Split the joined drizzle SQL text into individual statements. Drizzle's
+// `--> statement-breakpoint` marker and any `--` comment lines are removed
+// first so they never leak into the statement list (a comment-only chunk would
+// otherwise reach prepare() and throw on some backends).
 export function migrationStatementsFromText(raw: string): string[] {
-  return raw
+  const noComments = raw
     .replace(/--> statement-breakpoint/g, "")
+    .split("\n")
+    .filter((l) => !/^\s*--/.test(l))
+    .join("\n");
+  return noComments
     .split(/;\s*\n/)
     .map((s) => s.trim())
     .map((s) => s.replace(/;\s*$/, ""))
@@ -43,13 +50,24 @@ export function idempotentize(sql: string): string {
   return sql
     .replace(/^CREATE TABLE\s+([`"])/i, "CREATE TABLE IF NOT EXISTS $1")
     .replace(/^CREATE UNIQUE INDEX\s+([`"])/i, "CREATE UNIQUE INDEX IF NOT EXISTS $1")
-    .replace(/^CREATE INDEX\s+([`"])/i, "CREATE INDEX IF NOT EXISTS $1");
+    .replace(/^CREATE INDEX\s+([`"])/i, "CREATE INDEX IF NOT EXISTS $1")
+    .replace(/^DROP TABLE\s+([`"])/i, "DROP TABLE IF EXISTS $1");
 }
 
 // Extract table + column from a drizzle-generated `ALTER TABLE ... ADD`
 // statement so re-runs can skip columns that already exist.
 export function parseAlterAdd(sql: string): { table: string; column: string } | null {
   const m = /^ALTER TABLE\s+[`"]?([A-Za-z0-9_]+)[`"]?\s+ADD(?:\s+COLUMN)?\s+[`"]?([A-Za-z0-9_]+)[`"]?/i.exec(
+    sql.trim()
+  );
+  if (!m) return null;
+  return { table: m[1], column: m[2] };
+}
+
+// Same extraction for `ALTER TABLE ... DROP COLUMN`, so re-runs can skip
+// columns that are already gone.
+export function parseAlterDrop(sql: string): { table: string; column: string } | null {
+  const m = /^ALTER TABLE\s+[`"]?([A-Za-z0-9_]+)[`"]?\s+DROP(?:\s+COLUMN)?\s+[`"]?([A-Za-z0-9_]+)[`"]?/i.exec(
     sql.trim()
   );
   if (!m) return null;
@@ -88,10 +106,11 @@ export async function migrationStatements(dir = "drizzle"): Promise<string[]> {
 
 // Apply a parsed statement list (or the SQL directory, Node-only) to a
 // portable database. Options:
-//   idempotent — rewrite bare CREATE TABLE/INDEX to the IF NOT EXISTS form
-//                and skip ALTER TABLE ... ADD COLUMN statements whose column
-//                already exists, so re-running against a provisioned DB is a
-//                no-op rather than an error.
+//   idempotent — rewrite bare CREATE TABLE/INDEX to the IF NOT EXISTS form,
+//                rewrite DROP TABLE to DROP TABLE IF EXISTS, and skip
+//                ALTER TABLE ADD/DROP COLUMN statements whose column already
+//                exists / is already gone, so re-running against a provisioned
+//                DB is a no-op rather than an error.
 export async function applyMigrationStatements(
   db: MigratableDatabase,
   input: string | string[] = "drizzle",
@@ -106,6 +125,10 @@ export async function applyMigrationStatements(
     if (opts.idempotent) {
       const add = parseAlterAdd(raw);
       if (add && (await tableHasColumn(db, add.table, add.column))) {
+        continue;
+      }
+      const drop = parseAlterDrop(raw);
+      if (drop && !(await tableHasColumn(db, drop.table, drop.column))) {
         continue;
       }
     }

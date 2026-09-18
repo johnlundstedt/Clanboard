@@ -1,7 +1,7 @@
 import { and, eq, exists, inArray, isNotNull, isNull, ne, notExists, or, sql } from "drizzle-orm";
 import type { DbClient } from "./db.js";
 import { getSetting, setSetting } from "./db.js";
-import { taskAssignees, taskCategories, taskOccurrences, taskPriorities, tasks, users } from "../schema.js";
+import { taskAssignees, taskCategories, taskOccurrences, tasks, users } from "../schema.js";
 import { badRequest, forbidden, notFound } from "./errors.js";
 import { hasCap, canAssign, type LoggedInUser } from "./caps.js";
 import { autoAssignIcon } from "../modules/tasks/icon-catalog.js";
@@ -17,8 +17,6 @@ export interface TaskWire {
   name: string;
   description: string | null;
   category_id: number | null;
-  priority_id: number | null;
-  dollar_value: number | null;
   due_at: string | null;
   requires_adult_review: 0 | 1;
   completed_at: string | null;
@@ -36,7 +34,6 @@ export interface TaskWire {
   assignees?: { id: number; name: string }[];
   assigned_to?: number | null;
   category_name?: string | null;
-  priority_name?: string | null;
 }
 
 type DrizzleTask = typeof tasks.$inferSelect;
@@ -47,8 +44,6 @@ export function mapTaskRow(t: DrizzleTask): TaskWire {
     name: t.name,
     description: t.description,
     category_id: t.categoryId,
-    priority_id: t.priorityId,
-    dollar_value: t.dollarValue,
     due_at: t.dueAt,
     requires_adult_review: t.requiresAdultReview ? 1 : 0,
     completed_at: t.completedAt,
@@ -82,17 +77,6 @@ function mapCategoryRow(c: typeof taskCategories.$inferSelect): CategoryWire {
     is_default: c.isDefault ? 1 : 0,
     created_at: c.createdAt,
   };
-}
-
-interface PriorityWire {
-  id: number;
-  name: string;
-  sort: number;
-  created_at: string;
-}
-
-function mapPriorityRow(p: typeof taskPriorities.$inferSelect): PriorityWire {
-  return { id: p.id, name: p.name, sort: p.sort, created_at: p.createdAt };
 }
 
 // ---------------------------------------------------------------------------
@@ -145,8 +129,6 @@ export async function listTasks(
 export async function taskSettings(db: DbClient) {
   return {
     enable_categories: (await getSetting(db, "tasks_enable_categories")) !== "0",
-    enable_priorities: (await getSetting(db, "tasks_enable_priorities")) !== "0",
-    enable_dollar: (await getSetting(db, "tasks_enable_dollar")) === "1",
   };
 }
 
@@ -196,9 +178,8 @@ async function assertCanAssign(db: DbClient, user: LoggedInUser, userIds: number
   }
 }
 
-// Attach assignees/category/priority names to wire tasks, mirroring the old
-// raw-SQL join helpers. Adds `assignees`, `assigned_to`, `category_name`,
-// `priority_name`.
+// Attach assignees/category names to wire tasks, mirroring the old raw-SQL
+// join helpers. Adds `assignees`, `assigned_to`, `category_name`.
 async function attachAssignees(db: DbClient, tasksOut: TaskWire[]): Promise<TaskWire[]> {
   if (!tasksOut.length) return tasksOut;
   const ids = tasksOut.map((t) => t.id);
@@ -228,23 +209,11 @@ async function attachAssignees(db: DbClient, tasksOut: TaskWire[]): Promise<Task
     for (const c of cats) catNames.set(c.id, c.name);
   }
 
-  const priIds = [...new Set(tasksOut.map((t) => t.priority_id).filter((v): v is number => !!v))];
-  const priNames = new Map<number, string>();
-  if (priIds.length) {
-    const pris = await db
-      .select({ id: taskPriorities.id, name: taskPriorities.name })
-      .from(taskPriorities)
-      .where(inArray(taskPriorities.id, priIds))
-      .all();
-    for (const p of pris) priNames.set(p.id, p.name);
-  }
-
   for (const t of tasksOut) {
     const list = byTask.get(t.id) ?? [];
     t.assignees = list;
     t.assigned_to = list.length ? list[0].id : null;
     t.category_name = catNames.get(t.category_id ?? -1) ?? null;
-    t.priority_name = priNames.get(t.priority_id ?? -1) ?? null;
   }
   return tasksOut;
 }
@@ -541,58 +510,6 @@ export async function deleteCategory(db: DbClient, id: number): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
-// Priorities
-// ---------------------------------------------------------------------------
-
-export async function listPriorities(db: DbClient): Promise<PriorityWire[]> {
-  const rows = await db.select().from(taskPriorities).orderBy(taskPriorities.sort, taskPriorities.id).all();
-  return rows.map(mapPriorityRow);
-}
-
-export async function createPriority(
-  db: DbClient,
-  input: { name: string; sort?: number }
-): Promise<PriorityWire> {
-  const { name } = input;
-  if (!name || !name.trim()) throw badRequest("name is required");
-  const existing = await db.select({ id: taskPriorities.id }).from(taskPriorities).where(eq(taskPriorities.name, name.trim())).get();
-  if (existing) throw badRequest("That priority already exists");
-
-  let nextSort = input.sort !== undefined ? Number(input.sort) : NaN;
-  if (Number.isNaN(nextSort)) {
-    const max = await db.select({ m: sql<number>`COALESCE(MAX(sort), 0)` }).from(taskPriorities).get();
-    nextSort = (max?.m ?? 0) + 1;
-  }
-  const [row] = await db.insert(taskPriorities).values({ name: name.trim(), sort: nextSort }).returning().all();
-  return mapPriorityRow(row);
-}
-
-export async function updatePriority(
-  db: DbClient,
-  id: number,
-  input: { name?: string; sort?: number }
-): Promise<PriorityWire> {
-  const existing = await db.select().from(taskPriorities).where(eq(taskPriorities.id, id)).get();
-  if (!existing) throw notFound("Not found");
-
-  const { name, sort } = input;
-  await db
-    .update(taskPriorities)
-    .set({
-      name: name !== undefined ? name.trim() : existing.name,
-      sort: sort !== undefined ? (Number(sort) || existing.sort) : existing.sort,
-    })
-    .where(eq(taskPriorities.id, id))
-    .run();
-  const updated = await db.select().from(taskPriorities).where(eq(taskPriorities.id, id)).get();
-  return mapPriorityRow(updated!);
-}
-
-export async function deletePriority(db: DbClient, id: number): Promise<void> {
-  await db.delete(taskPriorities).where(eq(taskPriorities.id, id)).run();
-}
-
-// ---------------------------------------------------------------------------
 // Task lifecycle
 // ---------------------------------------------------------------------------
 
@@ -600,8 +517,6 @@ export interface TaskInput {
   name?: string;
   description?: string | null;
   category_id?: number | string | null;
-  priority_id?: number | string | null;
-  dollar_value?: number | string | null | undefined;
   due_at?: string | null;
   due_time?: string | null;
   requires_adult_review?: boolean;
@@ -663,16 +578,6 @@ export async function createTask(db: DbClient, user: LoggedInUser, body: TaskInp
             ? Number(body.category_id)
             : null
           : await defaultCategoryId(db),
-      priorityId:
-        body.priority_id !== undefined
-          ? body.priority_id
-            ? Number(body.priority_id)
-            : null
-          : null,
-      dollarValue:
-        body.dollar_value !== undefined && body.dollar_value !== null && body.dollar_value !== ""
-          ? Number(body.dollar_value) || null
-          : null,
       dueAt: body.due_at || null,
       dueTime: body.due_time || null,
       requiresAdultReview: !!body.requires_adult_review,
@@ -864,17 +769,6 @@ export async function updateTask(db: DbClient, user: LoggedInUser, id: number, b
           ? Number(body.category_id)
           : null
         : task.categoryId,
-      priorityId: body.priority_id !== undefined
-        ? body.priority_id
-          ? Number(body.priority_id)
-          : null
-        : task.priorityId,
-      dollarValue:
-        body.dollar_value !== undefined
-          ? body.dollar_value === null || body.dollar_value === ""
-            ? null
-            : Number(body.dollar_value) || null
-          : task.dollarValue,
       dueAt: body.due_at !== undefined ? body.due_at : task.dueAt,
       dueTime: body.due_time !== undefined ? body.due_time : task.dueTime,
       requiresAdultReview: body.requires_adult_review !== undefined ? !!body.requires_adult_review : task.requiresAdultReview,

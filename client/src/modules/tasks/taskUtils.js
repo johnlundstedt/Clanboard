@@ -12,11 +12,14 @@ export function isFullyDone(task) {
   return !!task.completed_at && (!task.requires_adult_review || task.reviewed_at);
 }
 
-// An "outstanding" task for a badge: not fully done AND due today or overdue.
-// Recurring tasks are rolled forward to their next occurrence server-side, so
-// only non-recurring tasks can ever be overdue here.
-export function isOutstandingDueTodayOrOverdue(task, today) {
+// An "outstanding" task for badges: not fully done AND (no due date, or due
+// today or overdue). This mirrors the dashboard's "today's tasks" predicate
+// (open tasks with no due date or due <= today), so the count by a member's
+// avatar matches what the dashboard lists for them. Recurring tasks are rolled
+// forward to their next occurrence server-side, so only non-recurring tasks can
+// ever be overdue here.
+export function isOutstanding(task, today) {
   if (isFullyDone(task)) return false;
   const due = task.due_at ? task.due_at.slice(0, 10) : null;
-  return !!due && (due === today || (due < today && !task.recurrence_type));
+  return !due || due <= today;
 }

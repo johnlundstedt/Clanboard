@@ -3,8 +3,10 @@ import { User, Lock, LogOut } from "lucide-react";
 import modules, { getClientModule } from "./modules/index.js";
 import { getMe, login, logout, forgotPassword, setPassword, getTasks } from "./api.js";
 import { ensureRealtime, usePolling } from "./realtime.js";
-import { isOutstandingDueTodayOrOverdue, todayStr } from "./modules/tasks/taskUtils.js";
+import { isOutstanding, todayStr } from "./modules/tasks/taskUtils.js";
+import { updateAppBadge } from "./pwa.js";
 import KioskShell from "./KioskShell.jsx";
+import TitleBar from "./TitleBar.jsx";
 import Logo from "./components/Logo.jsx";
 import Avatar from "./components/Avatar.jsx";
 import PasswordInput from "./components/PasswordInput.jsx";
@@ -14,6 +16,10 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [active, setActive] = useState(null);
   const [myDueCount, setMyDueCount] = useState(0);
+  // A dashboard "Today's Tasks" member tap hops to the Tasks module scoped to
+  // that member in Today mode. Cleared once the Tasks page has consumed it so a
+  // later direct "Tasks" nav falls back to the logged-in user's default view.
+  const [taskTarget, setTaskTarget] = useState(null); // { memberId, mode } | null
 
   const tasksEnabled = !!user && !user.is_kiosk && (user.enabled_modules || []).includes("tasks");
 
@@ -25,7 +31,7 @@ export default function App() {
         mine.filter(
           (t) =>
             (t.assignees || []).some((a) => a.id === user?.id) &&
-            isOutstandingDueTodayOrOverdue(t, today)
+            isOutstanding(t, today)
         ).length
       );
     } catch {
@@ -40,6 +46,12 @@ export default function App() {
   useEffect(() => {
     if (tasksEnabled) refreshMyDueCount();
   }, [tasksEnabled, refreshMyDueCount]);
+
+  // Mirror the header count to the installed app's icon (PWA Badging API). Only
+  // badges once the member can see tasks; cleared on logout/kiosk/disabling.
+  useEffect(() => {
+    updateAppBadge(tasksEnabled ? myDueCount : 0);
+  }, [myDueCount, tasksEnabled]);
 
   useEffect(() => {
     function onUnauthorized() {
@@ -105,8 +117,14 @@ export default function App() {
   const currentModule = getClientModule(active);
   const Page = currentModule?.page;
 
+  function openMemberTasks(memberId) {
+    setTaskTarget({ memberId, mode: "today" });
+    setActive("tasks");
+  }
+
   return (
-    <div>
+    <div className="wco-fill">
+      <TitleBar />
       <nav className="nav">
         <span className="title" style={{ display: "inline-flex", alignItems: "center", fontWeight: 800, flex: 1 }}>
           <Logo size={38} />
@@ -137,7 +155,12 @@ export default function App() {
 
       <main style={{ maxWidth: 1100, margin: "0 auto", padding: "1rem" }}>
         {Page ? (
-          <Page user={user} />
+          <Page
+            user={user}
+            taskTarget={taskTarget}
+            onOpenMemberTasks={openMemberTasks}
+            onTaskTargetConsumed={() => setTaskTarget(null)}
+          />
         ) : (
           <div className="card">This module isn't available.</div>
         )}
