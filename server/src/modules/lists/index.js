@@ -54,6 +54,16 @@ app.patch("/items/:itemId", requireCap(containerDb, "lists", "complete_items"), 
   })
 );
 
+// Edit an item's text (same people who can add items can correct them)
+app.patch("/items/:itemId/text", requireCap(containerDb, "lists", "add_items"), (c) =>
+  respond(c, async () => {
+    const body = await readJson(c);
+    const out = await core.updateItem(containerDb, numParam(c, "itemId"), body.text);
+    notifyList();
+    return out;
+  })
+);
+
 app.delete("/items/:itemId", requireCap(containerDb, "lists", "remove_items"), (c) =>
   respond(c, async () => {
     await core.removeItem(containerDb, numParam(c, "itemId"));

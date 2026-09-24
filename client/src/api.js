@@ -72,6 +72,8 @@ export const addListItem = (listId, text) =>
   req(`/lists/${listId}/items`, { method: "POST", body: JSON.stringify({ text }) });
 export const toggleListItem = (itemId, checked) =>
   req(`/lists/items/${itemId}`, { method: "PATCH", body: JSON.stringify({ checked }) });
+export const updateListItem = (itemId, text) =>
+  req(`/lists/items/${itemId}/text`, { method: "PATCH", body: JSON.stringify({ text }) });
 export const deleteListItem = (itemId) => req(`/lists/items/${itemId}`, { method: "DELETE" });
 
 // --- Meal plan ---------------------------------------------------------------

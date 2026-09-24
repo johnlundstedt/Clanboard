@@ -164,6 +164,20 @@ for (const backend of backends) {
       expect(rows).toHaveLength(0);
     });
 
+    it("updateItem rewrites the text", async () => {
+      const list = await listsCore.createList(db.db, "Groceries");
+      const item = await listsCore.addItem(db.db, list.id, "Milk");
+
+      await listsCore.updateItem(db.db, item.id, "Soy milk");
+      let all = await listsCore.listLists(db.db);
+      expect(all[0].items![0].text).toBe("Soy milk");
+
+      await expect(listsCore.updateItem(db.db, item.id, "   ")).rejects.toMatchObject({ status: 400 });
+      await expect(listsCore.updateItem(db.db, 999, "x")).rejects.toMatchObject({ status: 404 });
+      all = await listsCore.listLists(db.db);
+      expect(all[0].items![0].text).toBe("Soy milk");
+    });
+
     it("deleteList removes the list", async () => {
       const list = await listsCore.createList(db.db, "Groceries");
       await listsCore.addItem(db.db, list.id, "Milk");

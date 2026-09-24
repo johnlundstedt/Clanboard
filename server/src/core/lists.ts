@@ -96,6 +96,22 @@ export async function toggleItem(db: DbClient, itemId: number, checked: unknown)
   return { ok: true };
 }
 
+export async function updateItem(db: DbClient, itemId: number, text: string | undefined) {
+  if (!text || !text.trim()) throw badRequest("text is required");
+  const existing = await db
+    .select({ id: listItems.id })
+    .from(listItems)
+    .where(eq(listItems.id, itemId))
+    .get();
+  if (!existing) throw notFound("item not found");
+  await db
+    .update(listItems)
+    .set({ text: text.trim() })
+    .where(eq(listItems.id, itemId))
+    .run();
+  return { ok: true };
+}
+
 export async function removeItem(db: DbClient, itemId: number) {
   await db.delete(listItems).where(eq(listItems.id, itemId)).run();
   return { ok: true };
