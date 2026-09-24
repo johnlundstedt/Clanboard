@@ -74,6 +74,8 @@ export const toggleListItem = (itemId, checked) =>
   req(`/lists/items/${itemId}`, { method: "PATCH", body: JSON.stringify({ checked }) });
 export const updateListItem = (itemId, text) =>
   req(`/lists/items/${itemId}/text`, { method: "PATCH", body: JSON.stringify({ text }) });
+export const moveListItem = (itemId, listId) =>
+  req(`/lists/items/${itemId}/move`, { method: "PATCH", body: JSON.stringify({ list_id: listId }) });
 export const deleteListItem = (itemId) => req(`/lists/items/${itemId}`, { method: "DELETE" });
 
 // --- Meal plan ---------------------------------------------------------------

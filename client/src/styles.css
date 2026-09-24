@@ -109,7 +109,7 @@ input:focus, select:focus, textarea:focus {
 
 .row { display: flex; align-items: center; gap: 0.5rem; }
 .wrap { flex-wrap: wrap; }
-.grow { flex: 1; }
+.grow { flex: 1; min-width: 0; }
 
 /* Avatar: photo or initial badge */
 .avatar {
@@ -536,6 +536,9 @@ input:focus, select:focus, textarea:focus {
 }
 .list-menu button:hover { background: var(--bg-soft, #f3f4f6); }
 .list-menu button.danger:hover { background: #fef2f2; }
+
+/* Item-options menu: slate of target lists can grow tall, so cap + scroll it */
+.item-menu { max-height: 60vh; overflow-y: auto; min-width: 180px; }
 
 /* Installed desktop PWA: content expands into the OS title-bar area (Window
    Controls Overlay). The shell is pushed down by the strip's height so its own

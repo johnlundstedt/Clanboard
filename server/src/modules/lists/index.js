@@ -64,6 +64,16 @@ app.patch("/items/:itemId/text", requireCap(containerDb, "lists", "add_items"), 
   })
 );
 
+// Move an item to a different list (same people who can edit can relocate)
+app.patch("/items/:itemId/move", requireCap(containerDb, "lists", "add_items"), (c) =>
+  respond(c, async () => {
+    const body = await readJson(c);
+    const out = await core.moveItem(containerDb, numParam(c, "itemId"), Number(body.list_id));
+    notifyList();
+    return out;
+  })
+);
+
 app.delete("/items/:itemId", requireCap(containerDb, "lists", "remove_items"), (c) =>
   respond(c, async () => {
     await core.removeItem(containerDb, numParam(c, "itemId"));

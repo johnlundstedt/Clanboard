@@ -112,6 +112,24 @@ export async function updateItem(db: DbClient, itemId: number, text: string | un
   return { ok: true };
 }
 
+export async function moveItem(db: DbClient, itemId: number, listId: number | undefined) {
+  if (!listId || !Number.isInteger(listId)) throw badRequest("listId is required");
+  const existing = await db
+    .select({ id: listItems.id })
+    .from(listItems)
+    .where(eq(listItems.id, itemId))
+    .get();
+  if (!existing) throw notFound("item not found");
+  const dst = await db
+    .select({ id: lists.id })
+    .from(lists)
+    .where(eq(lists.id, listId))
+    .get();
+  if (!dst) throw notFound("list not found");
+  await db.update(listItems).set({ listId }).where(eq(listItems.id, itemId)).run();
+  return { ok: true };
+}
+
 export async function removeItem(db: DbClient, itemId: number) {
   await db.delete(listItems).where(eq(listItems.id, itemId)).run();
   return { ok: true };

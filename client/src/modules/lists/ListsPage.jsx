@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { MoreVertical, Maximize, Minimize } from "lucide-react";
 import {
-  getLists, createList, deleteList, addListItem, toggleListItem, updateListItem, deleteListItem,
+  getLists, createList, deleteList, addListItem, toggleListItem, updateListItem, moveListItem, deleteListItem,
 } from "../../api.js";
 import { usePolling } from "../../realtime.js";
 import useWakeLock from "../../useWakeLock.js";
@@ -14,6 +14,7 @@ export default function ListsPage({ user }) {
   const [menuFor, setMenuFor] = useState(null); // list id with the options menu open
   const [fullscreenId, setFullscreenId] = useState(null); // list id shown full screen
   const [editingItemId, setEditingItemId] = useState(null); // item id being edited in place
+  const [itemMenuFor, setItemMenuFor] = useState(null); // item id with the edit menu open
 
   const adult = !!user?.is_admin;
   const caps = user?.caps?.lists || {};
@@ -65,7 +66,10 @@ export default function ListsPage({ user }) {
 
   async function handleDeleteItem(itemId) {
     await deleteListItem(itemId);
-    if (editingItemId === itemId) setEditingItemId(null);
+    if (editingItemId === itemId) {
+      setEditingItemId(null);
+      setItemMenuFor(null);
+    }
     refresh();
   }
 
@@ -75,10 +79,20 @@ export default function ListsPage({ user }) {
     const trimmed = text.trim();
     if (!trimmed || trimmed === item.text) {
       setEditingItemId(null);
+      setItemMenuFor(null);
       return;
     }
     await updateListItem(item.id, trimmed);
     setEditingItemId(null);
+    setItemMenuFor(null);
+    refresh();
+  }
+
+  // Move an item to another list, then close the editor.
+  async function handleMoveItem(itemId, listId) {
+    await moveListItem(itemId, listId);
+    setEditingItemId(null);
+    setItemMenuFor(null);
     refresh();
   }
 
@@ -111,7 +125,7 @@ export default function ListsPage({ user }) {
               onKeyDown={(e) => e.key === "Enter" && handleCreateList()}
               placeholder="New list name…"
             />
-            <button className="primary" onClick={handleCreateList}>Create list</button>
+            <button className="primary" onClick={handleCreateList}>Create</button>
           </div>
         </div>
       )}
@@ -136,9 +150,13 @@ export default function ListsPage({ user }) {
             onDeleteList={handleDeleteList}
             onFullscreen={() => setFullscreenId(list.id)}
             editingItemId={editingItemId}
-            onStartEdit={setEditingItemId}
+            itemMenuFor={itemMenuFor}
+            lists={lists}
+            onStartEdit={(itemId) => { setEditingItemId(itemId); setItemMenuFor(null); }}
             onUpdateItem={handleUpdateItem}
-            onCancelEdit={() => setEditingItemId(null)}
+            onMoveItem={handleMoveItem}
+            onItemMenuChange={setItemMenuFor}
+            onCancelEdit={() => { setEditingItemId(null); setItemMenuFor(null); }}
           />
         ))}
       </div>
@@ -157,16 +175,20 @@ export default function ListsPage({ user }) {
           onDeleteItem={handleDeleteItem}
           onClose={() => setFullscreenId(null)}
           editingItemId={editingItemId}
-          onStartEdit={setEditingItemId}
+          itemMenuFor={itemMenuFor}
+          lists={lists}
+          onStartEdit={(itemId) => { setEditingItemId(itemId); setItemMenuFor(null); }}
           onUpdateItem={handleUpdateItem}
-          onCancelEdit={() => setEditingItemId(null)}
+          onMoveItem={handleMoveItem}
+          onItemMenuChange={setItemMenuFor}
+          onCancelEdit={() => { setEditingItemId(null); setItemMenuFor(null); }}
         />
       )}
     </div>
   );
 }
 
-function ListItem({ item, canCompleteItems, canEditItems, canRemoveItems, editing, onToggle, onDelete, onStartEdit, onSave, onCancel }) {
+function ListItem({ item, canCompleteItems, canEditItems, canRemoveItems, lists, editing, menuOpen, onToggle, onDelete, onStartEdit, onSave, onCancel, onMove, onMenuChange }) {
   const [draft, setDraft] = useState(item.text);
 
   useEffect(() => {
@@ -174,6 +196,7 @@ function ListItem({ item, canCompleteItems, canEditItems, canRemoveItems, editin
   }, [editing, item.text]);
 
   if (editing) {
+    const otherLists = lists.filter((l) => l.id !== item.list_id);
     return (
       <div className="row" style={{ padding: "0.2rem 0" }}>
         <input
@@ -181,12 +204,57 @@ function ListItem({ item, canCompleteItems, canEditItems, canRemoveItems, editin
           className="grow"
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
-          onBlur={() => onSave(item, draft)}
+          onBlur={() => { if (!menuOpen) onSave(item, draft); }}
           onKeyDown={(e) => {
             if (e.key === "Enter") onSave(item, draft);
             else if (e.key === "Escape") onCancel();
           }}
         />
+        <span style={{ position: "relative" }}>
+          {(canRemoveItems || otherLists.length > 0) && (
+            <button
+              className="icon-btn"
+              title="Item options"
+              aria-label={`Options for ${item.text}`}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => onMenuChange(menuOpen ? null : item.id)}
+            >
+              <MoreVertical size={20} />
+            </button>
+          )}
+          {menuOpen && (
+            <>
+              <div
+                style={{ position: "fixed", inset: 0, zIndex: 40 }}
+                onClick={() => onMenuChange(null)}
+              />
+              <div className="card list-menu item-menu">
+                {otherLists.length > 0 && (
+                  <>
+                    <div className="small muted" style={{ padding: "0.25rem 0.6rem" }}>
+                      Move to…
+                    </div>
+                    {otherLists.map((l) => (
+                      <button key={l.id} type="button" onClick={() => onMove(item.id, l.id)}>
+                        {l.name}
+                      </button>
+                    ))}
+                  </>
+                )}
+                {canRemoveItems && (
+                  <>
+                    {otherLists.length > 0 && (
+                      <div style={{ borderTop: "1px solid var(--border)", margin: "0.25rem 0" }} />
+                    )}
+                    <button type="button" className="danger" onClick={() => onDelete(item.id)}>
+                      Delete item
+                    </button>
+                  </>
+                )}
+              </div>
+            </>
+          )}
+        </span>
       </div>
     );
   }
@@ -212,7 +280,6 @@ function ListItem({ item, canCompleteItems, canEditItems, canRemoveItems, editin
       >
         {item.text}
       </span>
-      {canRemoveItems && <button className="small danger" onClick={() => onDelete(item.id)}>✕</button>}
     </div>
   );
 }
@@ -220,7 +287,7 @@ function ListItem({ item, canCompleteItems, canEditItems, canRemoveItems, editin
 function ListCard({
   list, canAddItems, canRemoveItems, canCompleteItems, canEditItems, canDeleteLists,
   drafts, menuFor, onMenuChange, onDraftChange, onAdd, onToggle, onDeleteItem, onDeleteList, onFullscreen,
-  editingItemId, onStartEdit, onUpdateItem, onCancelEdit,
+  lists, editingItemId, itemMenuFor, onStartEdit, onUpdateItem, onMoveItem, onItemMenuChange, onCancelEdit,
 }) {
   const uncheckedItems = list.items.filter((i) => !i.checked);
   const checkedItems = list.items.filter((i) => i.checked);
@@ -231,12 +298,16 @@ function ListCard({
       canCompleteItems={canCompleteItems}
       canEditItems={canEditItems}
       canRemoveItems={canRemoveItems}
+      lists={lists}
       editing={editingItemId === item.id}
+      menuOpen={itemMenuFor === item.id}
       onToggle={onToggle}
       onDelete={onDeleteItem}
       onStartEdit={onStartEdit}
       onSave={onUpdateItem}
       onCancel={onCancelEdit}
+      onMove={onMoveItem}
+      onMenuChange={onItemMenuChange}
     />
   );
 
@@ -307,7 +378,7 @@ function ListCard({
             onChange={(e) => onDraftChange(list.id, e.target.value)}
             placeholder={`Add to ${list.name}…`}
           />
-          <button onClick={() => onAdd(list.id)}>Add</button>
+          <button className="primary" onClick={() => onAdd(list.id)}>Add</button>
         </div>
       )}
 
@@ -320,7 +391,7 @@ function ListCard({
   );
 }
 
-function FullscreenList({ list, canAddItems, canRemoveItems, canCompleteItems, canEditItems, draft, onDraftChange, onAdd, onToggle, onDeleteItem, onClose, editingItemId, onStartEdit, onUpdateItem, onCancelEdit }) {
+function FullscreenList({ list, canAddItems, canRemoveItems, canCompleteItems, canEditItems, draft, onDraftChange, onAdd, onToggle, onDeleteItem, onClose, lists, editingItemId, itemMenuFor, onStartEdit, onUpdateItem, onMoveItem, onItemMenuChange, onCancelEdit }) {
   const uncheckedItems = list.items.filter((i) => !i.checked);
   const checkedItems = list.items.filter((i) => i.checked);
   const renderList = (item) => (
@@ -330,12 +401,16 @@ function FullscreenList({ list, canAddItems, canRemoveItems, canCompleteItems, c
       canCompleteItems={canCompleteItems}
       canEditItems={canEditItems}
       canRemoveItems={canRemoveItems}
+      lists={lists}
       editing={editingItemId === item.id}
+      menuOpen={itemMenuFor === item.id}
       onToggle={onToggle}
       onDelete={onDeleteItem}
       onStartEdit={onStartEdit}
       onSave={onUpdateItem}
       onCancel={onCancelEdit}
+      onMove={onMoveItem}
+      onMenuChange={onItemMenuChange}
     />
   );
 
@@ -390,7 +465,7 @@ function FullscreenList({ list, canAddItems, canRemoveItems, canCompleteItems, c
                 onKeyDown={(e) => e.key === "Enter" && onAdd(list.id)}
                 placeholder={`Add to ${list.name}…`}
               />
-              <button onClick={() => onAdd(list.id)}>Add</button>
+              <button className="primary" onClick={() => onAdd(list.id)}>Add</button>
             </div>
           )}
 

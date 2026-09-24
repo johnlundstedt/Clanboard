@@ -185,6 +185,24 @@ for (const backend of backends) {
       expect(await listsCore.listLists(db.db)).toEqual([]);
     });
 
+    it("moveItem relocates an item to another list", async () => {
+      const a = await listsCore.createList(db.db, "Groceries");
+      const b = await listsCore.createList(db.db, "Chores");
+      const item = await listsCore.addItem(db.db, a.id, "Milk");
+
+      await listsCore.moveItem(db.db, item.id, b.id);
+      const all = await listsCore.listLists(db.db);
+      expect(all[0].items).toEqual([]);
+      expect(all[1].items![0].id).toBe(item.id);
+      expect(all[1].items![0].list_id).toBe(b.id);
+
+      await expect(listsCore.moveItem(db.db, item.id, a.id)).resolves.toMatchObject({ ok: true });
+      await expect(listsCore.moveItem(db.db, item.id, 999)).rejects.toMatchObject({ status: 404 });
+      await expect(listsCore.moveItem(db.db, 999, a.id)).rejects.toMatchObject({ status: 404 });
+      await expect(listsCore.moveItem(db.db, item.id, undefined)).rejects.toMatchObject({ status: 400 });
+      await expect(listsCore.moveItem(db.db, item.id, 1.5)).rejects.toMatchObject({ status: 400 });
+    });
+
     it("toggleItem stamps checked_at on check and clears it on uncheck", async () => {
       const list = await listsCore.createList(db.db, "Groceries");
       const item = await listsCore.addItem(db.db, list.id, "Milk");
