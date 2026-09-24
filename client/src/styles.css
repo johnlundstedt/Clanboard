@@ -593,6 +593,15 @@ input:focus, select:focus, textarea:focus {
 }
 
 /* Meal plan grid */
+/* The week grid is wider than a phone, so it lives in a scroll container that
+   clips to the screen; extending past the page's side padding lets the fixed
+   meal-label column sit flush with the left edge. */
+.meal-scroll {
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  margin: 0 -1rem;
+}
 .meal-grid {
   display: grid;
   grid-template-rows: 30px repeat(4, auto);
@@ -601,9 +610,14 @@ input:focus, select:focus, textarea:focus {
   grid-template-columns: 92px repeat(7, 1fr);
   gap: 0.5rem;
   min-width: 1180px;
-  overflow-x: auto;
 }
+/* Left-hand column (meal labels + "Week" corner) stays put while the day
+   columns scroll; painted with the page background so rows slide underneath. */
 .meal-corner {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--bg);
   line-height: 30px;
   font-size: 0.75rem;
   color: var(--muted);
@@ -630,6 +644,10 @@ input:focus, select:focus, textarea:focus {
   padding: 1px 6px;
 }
 .meal-slot-label {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--bg);
   display: flex;
   flex-direction: column;
   align-items: center;

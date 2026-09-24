@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Sunrise, Sandwich, CookingPot, Apple } from "lucide-react";
 import { getMealWeek, setMealEntry } from "../../api.js";
 import { usePolling } from "../../realtime.js";
@@ -86,6 +86,27 @@ export default function MealPlanPage({ user }) {
 
   useEffect(() => { refresh(); }, [refresh]);
 
+  const gridRef = useRef(null);
+  const todayRef = useRef(null);
+
+  // Open on the current day: nudge the horizontal scroll so today's column is
+  // in view, ignoring the fixed label column (92px + gap) on the left.
+  useEffect(() => {
+    const wrap = gridRef.current;
+    const today = todayRef.current;
+    if (!wrap || !today) return;
+    const grid = wrap.querySelector(".meal-grid");
+    const styles = grid ? getComputedStyle(grid) : null;
+    const labelW = styles ? parseFloat(styles.gridTemplateColumns.split(" ")[0]) : 92;
+    const gap = styles ? parseFloat(styles.columnGap) || 0 : 8;
+    const wrapRect = wrap.getBoundingClientRect();
+    const todayLeft = today.getBoundingClientRect().left - wrapRect.left;
+    const visible = wrap.clientWidth - labelW - gap;
+    const maxScroll = wrap.scrollWidth - wrap.clientWidth;
+    const desired = todayLeft - labelW - gap - (visible - today.offsetWidth) / 2;
+    wrap.scrollLeft = Math.min(Math.max(desired, 0), maxScroll);
+  }, []);
+
   const days = Array.from({ length: 7 }, (_, i) => {
     const d = new Date(`${start}T12:00:00`);
     d.setDate(d.getDate() + i);
@@ -133,34 +154,36 @@ export default function MealPlanPage({ user }) {
         </div>
       </div>
 
-      <div className="meal-grid">
-        <div className="meal-corner">Week</div>
-        {days.map((date, i) => {
-          const weekday = new Date(`${date}T12:00:00`).toLocaleDateString(undefined, { weekday: "short" });
-          const isToday = date === today;
-          return (
-            <div key={date} className={`meal-day-head ${isToday ? "today" : ""}`}>
-              {weekday} <span>{date.slice(8)}</span>
-              {isToday && <em>today</em>}
-            </div>
-          );
-        })}
+      <div className="meal-scroll" ref={gridRef}>
+        <div className="meal-grid">
+          <div className="meal-corner">Week</div>
+          {days.map((date, i) => {
+            const weekday = new Date(`${date}T12:00:00`).toLocaleDateString(undefined, { weekday: "short" });
+            const isToday = date === today;
+            return (
+              <div key={date} ref={isToday ? todayRef : undefined} className={`meal-day-head ${isToday ? "today" : ""}`}>
+                {weekday} <span>{date.slice(8)}</span>
+                {isToday && <em>today</em>}
+              </div>
+            );
+          })}
 
-        {SLOTS.map(([slot, label, Icon]) => (
-          <MealRow
-            key={slot}
-            slot={slot}
-            label={label}
-            Icon={Icon}
-            days={days}
-            drafts={drafts}
-            entries={entries}
-            saving={saving}
-            canEdit={canEdit}
-            onDraft={setDrafts}
-            onSave={save}
-          />
-        ))}
+          {SLOTS.map(([slot, label, Icon]) => (
+            <MealRow
+              key={slot}
+              slot={slot}
+              label={label}
+              Icon={Icon}
+              days={days}
+              drafts={drafts}
+              entries={entries}
+              saving={saving}
+              canEdit={canEdit}
+              onDraft={setDrafts}
+              onSave={save}
+            />
+          ))}
+        </div>
       </div>
 
       {!canEdit && (
