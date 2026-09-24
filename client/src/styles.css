@@ -677,3 +677,8 @@ input:focus, select:focus, textarea:focus {
   color: #1e40af;
   overflow: hidden;
 }
+.cal-schedule { display: grid; gap: 0.75rem; }
+.cal-sched-day { border: 1px solid var(--border); border-radius: 8px; padding: 0.6rem 0.8rem; }
+.cal-sched-evt { display: flex; align-items: center; gap: 0.5rem; padding: 0.2rem 0; min-width: 0; }
+.cal-sched-evt .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.cal-sched-evt .time { font-size: 0.8rem; color: var(--muted); white-space: nowrap; min-width: 3.2rem; }

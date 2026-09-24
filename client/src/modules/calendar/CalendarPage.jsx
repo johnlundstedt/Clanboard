@@ -6,6 +6,7 @@ const VIEWS = [
   ["day", "Day"],
   ["week", "Week"],
   ["month", "Month"],
+  ["schedule", "Schedule"],
 ];
 
 function addDays(date, n) {
@@ -64,6 +65,9 @@ export default function CalendarPage() {
       const end = addMonths(startOfMonth(anchor), 1);
       return { start: startOfMonth(anchor), end };
     }
+    if (view === "schedule") {
+      return { start: anchor, end: addDays(anchor, 7) };
+    }
     const start = startOfWeek(anchor);
     return { start, end: addDays(start, 7) };
   }, [view, anchor]);
@@ -85,16 +89,18 @@ export default function CalendarPage() {
   function shift(n) {
     if (view === "day") setAnchor((a) => addDays(a, n));
     else if (view === "month") setAnchor((a) => addMonths(a, n));
+    else if (view === "schedule") setAnchor((a) => addDays(a, n * 7));
     else setAnchor((a) => addDays(startOfWeek(a), n * 7));
   }
 
   function resetToNow() {
     if (view === "day") setAnchor(new Date());
     else if (view === "month") setAnchor(startOfMonth(new Date()));
+    else if (view === "schedule") setAnchor(new Date());
     else setAnchor(startOfWeek(new Date()));
   }
 
-  const nowLabel = view === "day" ? "Today" : view === "month" ? "This month" : "This week";
+  const nowLabel = view === "day" || view === "schedule" ? "Today" : view === "month" ? "This month" : "This week";
 
   let rangeLabel;
   if (view === "day") {
@@ -197,6 +203,37 @@ export default function CalendarPage() {
                 {dayEvents.length > 3 && (
                   <div className="small muted">+{dayEvents.length - 3} more</div>
                 )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {view === "schedule" && (
+        <div className="cal-schedule">
+          {Array.from({ length: 7 }, (_, i) => addDays(start, i)).map((d) => {
+            const ds = fmtDate(d);
+            const dayEvents = eventsForDate(d);
+            const isToday = ds === today;
+            return (
+              <div key={ds} className="cal-sched-day">
+                <div className="row" style={{ marginBottom: "0.35rem" }}>
+                  <strong style={{ color: isToday ? "var(--accent)" : undefined }}>
+                    {d.toLocaleDateString(undefined, { weekday: "long" })}
+                  </strong>
+                  <span className="small muted">{d.toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span>
+                </div>
+                {dayEvents.map((e) => (
+                  <div key={e.id} className="cal-sched-evt">
+                    <span className="dot" style={{ background: e.color || "#3b82f6" }} />
+                    <span className="time">{e.all_day ? "All-day" : e.start_at.slice(11, 16)}</span>
+                    <span className="grow">
+                      {e.summary}
+                      {e.location && <span className="small muted"> · {e.location}</span>}
+                    </span>
+                  </div>
+                ))}
+                {dayEvents.length === 0 && <span className="small muted">No events.</span>}
               </div>
             );
           })}
