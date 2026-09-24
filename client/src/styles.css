@@ -611,19 +611,10 @@ input:focus, select:focus, textarea:focus {
   gap: 0.5rem;
   min-width: 1180px;
 }
-/* Left-hand column (meal labels + "Week" corner) stays put while the day
-   columns scroll; painted with the page background so rows slide underneath. */
-.meal-corner {
-  position: sticky;
-  left: 0;
-  z-index: 1;
-  background: var(--bg);
-  line-height: 30px;
-  font-size: 0.75rem;
-  color: var(--muted);
-  font-weight: 600;
-  white-space: nowrap;
-}
+/* Left-hand column (meal labels) stays put while the day columns scroll;
+   painted with the page background so rows slide underneath. The top-left
+   corner cell remains in the markup as an empty spacer to keep the day
+   headers aligned with their columns. */
 .meal-day-head {
   font-weight: 700;
   line-height: 30px;

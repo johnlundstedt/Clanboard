@@ -156,7 +156,7 @@ export default function MealPlanPage({ user }) {
 
       <div className="meal-scroll" ref={gridRef}>
         <div className="meal-grid">
-          <div className="meal-corner">Week</div>
+          <div className="meal-corner" />
           {days.map((date, i) => {
             const weekday = new Date(`${date}T12:00:00`).toLocaleDateString(undefined, { weekday: "short" });
             const isToday = date === today;
