@@ -334,10 +334,10 @@ export default function TaskForm({ members, initial, defaultAssigneeIds, onSubmi
       </div>
 
       <div className="row" style={{ marginTop: "0.4rem" }}>
-        <button className="primary" type="submit">{initial ? "Save changes" : "Add task"}</button>
+        <button className="primary" type="submit">{initial ? "Save" : "Add task"}</button>
         {onCancel && <button type="button" onClick={onCancel}>Cancel</button>}
         {initial && canDelete && (
-          <button type="button" className="danger" onClick={() => onDelete?.(initial)}>Delete task</button>
+          <button type="button" className="danger" onClick={() => onDelete?.(initial)}>Delete</button>
         )}
       </div>
     </form>
