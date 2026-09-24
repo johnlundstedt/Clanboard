@@ -102,6 +102,7 @@ input:focus, select:focus, textarea:focus {
   border-radius: var(--radius);
   box-shadow: var(--shadow);
   padding: 1rem;
+  min-width: 0;
 }
 
 .muted { color: var(--muted); }
@@ -613,8 +614,14 @@ input:focus, select:focus, textarea:focus {
 }
 /* Left-hand column (meal labels) stays put while the day columns scroll;
    painted with the page background so rows slide underneath. The top-left
-   corner cell remains in the markup as an empty spacer to keep the day
-   headers aligned with their columns. */
+   corner cell is kept in the markup as an empty, sticky spacer so the corner
+   stays blank as day headers scroll beneath it. */
+.meal-corner {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--bg);
+}
 .meal-day-head {
   font-weight: 700;
   line-height: 30px;
