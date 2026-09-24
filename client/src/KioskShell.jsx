@@ -4,42 +4,14 @@ import modules, { getClientModule } from "./modules/index.js";
 import Avatar from "./components/Avatar.jsx";
 import { getModules, getMembers, getTasks, logout } from "./api.js";
 import { usePolling } from "./realtime.js";
+import useWakeLock from "./useWakeLock.js";
 import TitleBar from "./TitleBar.jsx";
 import { isFullyDone, isOutstanding, todayStr } from "./modules/tasks/taskUtils.js";
 import Logo from "./components/Logo.jsx";
 
-// Wall display: keep the screen awake for as long as the kiosk is open.
-// A screen wake lock is released when the tab is hidden, so re-request it
-// whenever the kiosk becomes visible again.
-function useScreenWakeLock() {
-  useEffect(() => {
-    if (!("wakeLock" in navigator)) return;
-    let lock = null;
-    let released = false;
-    async function request() {
-      if (released) return;
-      try {
-        lock = await navigator.wakeLock.request("screen");
-      } catch {
-        lock = null;
-      }
-    }
-    function onVisibility() {
-      if (document.visibilityState === "visible") request();
-    }
-    request();
-    document.addEventListener("visibilitychange", onVisibility);
-    return () => {
-      released = true;
-      if (lock) lock.release().catch(() => {});
-      document.removeEventListener("visibilitychange", onVisibility);
-    };
-  }, []);
-}
-
-// Wall-display shell: left-hand family sidebar (whole family + each member's
-// avatar), module nav across the top filtered to the selected member, and the
-// selected member's dashboard as the default view.
+// Wall-display shell (below): left-hand family sidebar (whole family + each
+// member's avatar), module nav across the top filtered to the selected member,
+// and the selected member's dashboard as the default view.
 export default function KioskShell({ user, onLogout }) {
   const [members, setMembers] = useState([]);
   const [tasks, setTasks] = useState([]);
@@ -47,7 +19,8 @@ export default function KioskShell({ user, onLogout }) {
   const [selectedId, setSelectedId] = useState(null); // null = whole family
   const [active, setActive] = useState("dashboard");
 
-  useScreenWakeLock();
+  // Keep the wall display's screen awake for as long as the kiosk is open.
+  useWakeLock(true);
 
   const refresh = useCallback(async () => {
     const [mods] = await Promise.all([getModules(), getMembers()]);

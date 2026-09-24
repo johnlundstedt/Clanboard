@@ -29,10 +29,17 @@ export default function TasksPage({ user, memberId, member, taskTarget, onTaskTa
   const [members, setMembers] = useState([]);
   const [showingForm, setShowingForm] = useState(false);
   const [editing, setEditing] = useState(null);
+  // A dashboard "unassigned task" tap arrives with a taskId: open that task's
+  // editor once its row is loaded, on the whole-family list so it's always
+  // visible (it has no assignee to filter by).
+  const [pendingEditId, setPendingEditId] = useState(taskTarget?.taskId || null);
   // null = everyone; defaults to the logged-in user, or to the member whose
-  // dashboard row was tapped (taskTarget) if we're arriving via that hop.
+  // dashboard row was tapped (taskTarget) if we're arriving via that hop. A
+  // targeted unassigned task has no assignee, so keep the filter off.
   const [memberFilter, setMemberFilter] = useState(
-    () => taskTarget?.memberId ?? (user && !user.is_kiosk ? user.id : null)
+    () => taskTarget?.taskId != null
+      ? null
+      : (taskTarget?.memberId ?? (user && !user.is_kiosk ? user.id : null))
   );
   const [categories, setCategories] = useState([]);
   const [settings, setSettings] = useState({});
@@ -43,6 +50,18 @@ export default function TasksPage({ user, memberId, member, taskTarget, onTaskTa
   useEffect(() => {
     if (taskTarget) onTaskTargetConsumed?.();
   }, [taskTarget, onTaskTargetConsumed]);
+
+  // When the target names a task, open its editor once the row has loaded so
+  // the form is pre-filled (and the user can assign it right away).
+  useEffect(() => {
+    if (pendingEditId == null) return;
+    const found = tasks.find((t) => t.id === pendingEditId);
+    if (!found) return;
+    setEditing(found);
+    setShowingForm(false);
+    setMemberFilter(null);
+    setPendingEditId(null);
+  }, [pendingEditId, tasks]);
 
   const refresh = useCallback(async () => {
     const [t, m, s, cats] = await Promise.all([

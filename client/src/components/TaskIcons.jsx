@@ -51,6 +51,14 @@ export const iconComponents = {
   key: Icons.Key,
   lock: Icons.Lock,
   "list-checks": Icons.ListChecks,
+  // Pet / animal + grooming icons (mirrors icon-catalog.js server rules)
+  "toothbrush-sparkles": Icons.Brush,
+  rabbit: Icons.Rabbit,
+  cat: Icons.Cat,
+  turtle: Icons.Turtle,
+  bird: Icons.Bird,
+  rat: Icons.Rat,
+  "mirror-round": Icons.MirrorRound,
 };
 
 // Searchable catalog for the picker: label keywords -> icon name
@@ -99,6 +107,13 @@ export const iconCatalog = [
   ["key", "key, unlock, security"],
   ["lock", "lock, secure, safety"],
   ["list-checks", "task, checklist, to-do, errand"],
+  ["toothbrush-sparkles", "toothbrush, brush teeth, teeth, toothpaste, dental, floss, mouthwash"],
+  ["rabbit", "rabbit, bunny, hare"],
+  ["cat", "cat, kitten, kitty, pet"],
+  ["turtle", "turtle, tortoise"],
+  ["bird", "bird, parrot, chicken, pet"],
+  ["rat", "rat, mouse, guinea pig, hamster, gerbil, pet"],
+  ["mirror-round", "mirror, brush hair, comb hair, hair, grooming"],
 ];
 
 export function resolveIcon(name) {

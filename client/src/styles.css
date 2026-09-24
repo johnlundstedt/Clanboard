@@ -494,6 +494,49 @@ input:focus, select:focus, textarea:focus {
   .child-progress.clickable:hover { background: none; }
 }
 
+.row.clickable { cursor: pointer; }
+.row.clickable:hover { background: var(--bg-soft, #f3f4f6); }
+@media (hover: none) {
+  .row.clickable:hover { background: none; }
+}
+
+/* Compact icon-only buttons (list headers, full-screen controls) */
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.4rem;
+  border: none;
+  background: transparent;
+  border-radius: 8px;
+  color: var(--muted);
+  cursor: pointer;
+}
+.icon-btn:hover { background: var(--bg-soft, #f3f4f6); color: var(--text); }
+.icon-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* Dropdown menu popover anchored to a list header's options button */
+.list-menu {
+  position: absolute;
+  top: 110%;
+  right: 0;
+  z-index: 41;
+  min-width: 150px;
+  padding: 0.4rem;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+}
+.list-menu button {
+  width: 100%;
+  text-align: left;
+  padding: 0.4rem 0.6rem;
+  background: none;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.list-menu button:hover { background: var(--bg-soft, #f3f4f6); }
+.list-menu button.danger:hover { background: #fef2f2; }
+
 /* Installed desktop PWA: content expands into the OS title-bar area (Window
    Controls Overlay). The shell is pushed down by the strip's height so its own
    nav never hides under the window controls, and a slim fixed strip hosts app

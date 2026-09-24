@@ -5,13 +5,21 @@
 // [regex, iconName] — regex tested against the lowercased name
 const RULES = [
   [/\b(trash|rubbish|garbage|recycl|compost|take out)\b/, "trash"],
+  [/\b(cats?|kittens?|kitties?|kitty|felines?)\b/, "cat"],
+  [/\b(rabbits?|bunn(?:y|ies)|hares?)\b/, "rabbit"],
+  [/\b(turtles?|tortoises?)\b/, "turtle"],
+  [/\b(birds?|parrots?|chickens?|roosters?|hens?)\b/, "bird"],
+  // Small-furry pets (guinea pigs, hamsters, gerbils) get the rat icon
+  [/\b(guinea pigs?|rats?|hamsters?|gerbils?)\b/, "rat"],
   [/\b(dish|dishes|dishwasher|laundry|wash|clothes|fold)\b/, "shirt"],
   [/\b(clean|vacuum|sweep|mop|wipe|dust|tidy|organi[sz]e|organi[sz]ation)\b/, "sparkles"],
   [/\b(vacuum)\b/, "vacuum"],
-  [/\b(feed|pet|dog|cat|walk the dog|walk dog)\b/, "paw-print"],
+  [/\b(feed|pet|dog|walk the dog|walk dog)\b/, "paw-print"],
   [/\b(breakfast|lunch|dinner|cook|meal|mealplan|snack|bake|groceries|grocery|shopping|shop)\b/, "utensils"],
   [/\b(cook|dinner|lunch|breakfast)\b/, "cooking-pot"],
   [/\b(shopping|grocery|shop|buy|errand|store)\b/, "shopping-cart"],
+  [/\b(toothbrush|brush teeth|brush your teeth|teeth|toothpaste|dental|floss|mouthwash)\b/, "toothbrush-sparkles"],
+  [/\b(brush hair|comb hair)\b/, "mirror-round"],
   [/\b(bath|bathroom|brush|teeth|shower|hair|haircut)\b/, "shower-head"],
   [/\b(school|homework|study|read|book|library|project)\b/, "book-open"],
   [/\b(music|piano|guitar|violin|practice)\b/, "music"],
@@ -67,6 +75,13 @@ const PRESET_ICONS = {
   package: "package",
   phone: "phone",
   "layout-grid": "layout-grid",
+  "toothbrush-sparkles": "toothbrush-sparkles",
+  rabbit: "rabbit",
+  cat: "cat",
+  turtle: "turtle",
+  bird: "bird",
+  rat: "rat",
+  "mirror-round": "mirror-round",
 };
 
 // The distinct set of icons available for search, independent of keywords

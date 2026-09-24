@@ -2,6 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { and, eq } from "drizzle-orm";
 import * as s from "../src/schema.js";
 import * as core from "../src/core/tasks.js";
+import { autoAssignIcon } from "../src/modules/tasks/icon-catalog.js";
 import { addDays, todayStr } from "../src/modules/tasks/recurrence.js";
 import {
   closeD1,
@@ -478,3 +479,34 @@ for (const backend of backends) {
     });
   });
 }
+
+describe("autoAssignIcon keywords", () => {
+  it("maps grooming keywords to the toothbrush and mirror icons", () => {
+    expect(autoAssignIcon("Brush teeth")).toBe("toothbrush-sparkles");
+    expect(autoAssignIcon("brush your teeth")).toBe("toothbrush-sparkles");
+    expect(autoAssignIcon("Brush hair")).toBe("mirror-round");
+    expect(autoAssignIcon("comb hair")).toBe("mirror-round");
+    // The generic shower/scrub keywords still keep their shower icon
+    expect(autoAssignIcon("Brush the floor")).toBe("shower-head");
+  });
+
+  it("maps pet / animal keywords to their icons", () => {
+    expect(autoAssignIcon("Feed the cat")).toBe("cat");
+    expect(autoAssignIcon("Give the kitten water")).toBe("cat");
+    expect(autoAssignIcon("Hold the rabbit")).toBe("rabbit");
+    expect(autoAssignIcon("Clean the turtle tank")).toBe("turtle");
+    expect(autoAssignIcon("Feed the chickens")).toBe("bird");
+    // Small-furry pets (guinea pigs etc.) get the rat icon, even with "clean"
+    expect(autoAssignIcon("Clean the guinea pig cage")).toBe("rat");
+    expect(autoAssignIcon("Clean the hamster cage")).toBe("rat");
+    expect(autoAssignIcon("Catch the rat")).toBe("rat");
+    expect(autoAssignIcon("Walk the dog")).toBe("paw-print");
+  });
+
+  it("keeps existing keyword behaviour", () => {
+    expect(autoAssignIcon("Take out the trash")).toBe("trash");
+    expect(autoAssignIcon("Wash the dishes")).toBe("shirt");
+    expect(autoAssignIcon("Clean the kitchen")).toBe("sparkles");
+    expect(autoAssignIcon("Fix the computer mouse")).toBe("wrench");
+  });
+});

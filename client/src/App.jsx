@@ -17,9 +17,10 @@ export default function App() {
   const [active, setActive] = useState(null);
   const [myDueCount, setMyDueCount] = useState(0);
   // A dashboard "Today's Tasks" member tap hops to the Tasks module scoped to
-  // that member in Today mode. Cleared once the Tasks page has consumed it so a
-  // later direct "Tasks" nav falls back to the logged-in user's default view.
-  const [taskTarget, setTaskTarget] = useState(null); // { memberId, mode } | null
+  // that member in Today mode; a tap on an unassigned task hops there and opens
+  // that task's editor. Cleared once the Tasks page has consumed it so a later
+  // direct "Tasks" nav falls back to the logged-in user's default view.
+  const [taskTarget, setTaskTarget] = useState(null); // { memberId?, taskId?, mode } | null
 
   const tasksEnabled = !!user && !user.is_kiosk && (user.enabled_modules || []).includes("tasks");
 
@@ -122,6 +123,11 @@ export default function App() {
     setActive("tasks");
   }
 
+  function openTask(taskId) {
+    setTaskTarget({ taskId, mode: "all" });
+    setActive("tasks");
+  }
+
   return (
     <div className="wco-fill">
       <TitleBar />
@@ -159,6 +165,7 @@ export default function App() {
             user={user}
             taskTarget={taskTarget}
             onOpenMemberTasks={openMemberTasks}
+            onOpenTask={openTask}
             onTaskTargetConsumed={() => setTaskTarget(null)}
           />
         ) : (

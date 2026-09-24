@@ -30,7 +30,7 @@ function formatTemp(day, kind) {
   return <strong>{day[val]}{unit}</strong>;
 }
 
-export default function DashboardPage({ user, memberId, member, onOpenMemberTasks }) {
+export default function DashboardPage({ user, memberId, member, onOpenMemberTasks, onOpenTask }) {
   const [data, setData] = useState(null);
   const [quick, setQuick] = useState("");
 
@@ -39,6 +39,11 @@ export default function DashboardPage({ user, memberId, member, onOpenMemberTask
   const canQuickAdd =
     adult || user?.is_kiosk ||
     (memberId ? !!caps.create : !!caps.create && !!caps.create_unassigned);
+
+  // Opening an unassigned task lands on its editor via the Tasks page's edit
+  // form, which requires the "edit" capability to save — gate the tap on it so
+  // viewers who can't assign don't land on a form they can't submit.
+  const canAssignUnassigned = adult || user?.is_kiosk || !!caps.edit;
 
   // A member row jumps straight to that member's Today view on the Tasks page.
   // Only viewers who can see everyone's tasks (kiosk, admin, or view_others) get
@@ -185,15 +190,29 @@ export default function DashboardPage({ user, memberId, member, onOpenMemberTask
         {data.unassigned.length > 0 && (
           <div style={{ marginTop: "1rem", borderTop: "1px solid var(--border)", paddingTop: "0.75rem" }}>
             <div className="small muted" style={{ marginBottom: "0.4rem" }}>Unassigned — needs an owner:</div>
-            {data.unassigned.map((t) => (
-              <div key={t.id} className="row" style={{ padding: "0.2rem 0", gap: "0.5rem" }}>
-                <TaskIcon name={t.icon} size={20} />
-                <span className="grow">{t.name}</span>
-                <span className="badge amber">unassigned</span>
-              </div>
-            ))}
+            {data.unassigned.map((t) => {
+              const clickable = canAssignUnassigned && !!onOpenTask;
+              return (
+                <div
+                  key={t.id}
+                  className={`row${clickable ? " clickable" : ""}`}
+                  role={clickable ? "button" : undefined}
+                  tabIndex={clickable ? 0 : undefined}
+                  onClick={clickable ? () => onOpenTask(t.id) : undefined}
+                  onKeyDown={clickable ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onOpenTask(t.id); } } : undefined}
+                  title={clickable ? "Assign this task to a member" : undefined}
+                  style={clickable ? { padding: "0.2rem 0", gap: "0.5rem", borderRadius: 6 } : { padding: "0.2rem 0", gap: "0.5rem" }}
+                >
+                  <TaskIcon name={t.icon} size={20} />
+                  <span className="grow">{t.name}</span>
+                  <span className="badge amber">unassigned</span>
+                </div>
+              );
+            })}
             <div className="small muted" style={{ marginTop: "0.4rem" }}>
-              Assign these on the Tasks page.
+              {canAssignUnassigned && onOpenTask
+                ? "Tap a task to open it and assign a member."
+                : "Assign these on the Tasks page."}
             </div>
           </div>
         )}
