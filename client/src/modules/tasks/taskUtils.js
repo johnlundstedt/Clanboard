@@ -7,19 +7,65 @@ export function todayStr() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
+// Shift a YYYY-MM-DD day by n days. Noon-anchored so a DST jump can't slide the
+// result onto the neighbouring day.
+export function addDaysStr(day, n) {
+  const d = new Date(`${day}T12:00:00`);
+  d.setDate(d.getDate() + n);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 // Fully done = completed AND (when it requires an adult) reviewed.
 export function isFullyDone(task) {
   return !!task.completed_at && (!task.requires_adult_review || task.reviewed_at);
 }
 
-// An "outstanding" task for badges: not fully done AND (no due date, or due
-// today or overdue). This mirrors the dashboard's "today's tasks" predicate
-// (open tasks with no due date or due <= today), so the count by a member's
-// avatar matches what the dashboard lists for them. Recurring tasks are rolled
-// forward to their next occurrence server-side, so only non-recurring tasks can
-// ever be overdue here.
+// Due today = the server found an instance scheduled for today (`due_today`),
+// or `due_at` itself lands on today. The flag matters for repeats: once a
+// rolling row has advanced to a later day, `due_at` alone would file a task
+// that is still scheduled for today under "upcoming".
+export function isDueToday(task, today) {
+  if (task.due_today) return true;
+  const due = task.due_at ? task.due_at.slice(0, 10) : null;
+  return due === today;
+}
+
+// An "outstanding" task for badges: not fully done AND (scheduled for today, no
+// due date, or due today or overdue). This mirrors the dashboard's "today's
+// tasks" predicate (open tasks with no due date or due <= today, plus anything
+// with an instance today), so the count by a member's avatar matches what the
+// dashboard lists for them. Recurring tasks are rolled forward to their next
+// occurrence server-side, so only non-recurring tasks can ever be overdue here.
 export function isOutstanding(task, today) {
   if (isFullyDone(task)) return false;
+  if (isDueToday(task, today)) return true;
   const due = task.due_at ? task.due_at.slice(0, 10) : null;
   return !due || due <= today;
+}
+
+// Which list section a task belongs to, using the same notion of "today" as the
+// dashboard's "today's tasks" panel — an open task is today's work when it has
+// an instance today, carries no due date at all, or its due date has arrived.
+//   outstanding    - not done, and today's work (overdue only when non-repeating,
+//                    since repeats roll to their next occurrence server-side)
+//   upcoming       - not done and due within the next 7 days (daily repeats are
+//                    excluded; they always read as due today)
+//   completedToday - finished today
+//   rest           - everything else (finished earlier, due further out)
+export function taskBucket(task, today) {
+  if (task.completed_at) {
+    // completed_at is a UTC instant, so its first 10 characters are the UTC day,
+    // not the day the task was done on — they disagree for the last |UTC offset|
+    // hours of every evening. The server sends the viewer's own day alongside it.
+    const day = task.completed_day || task.completed_at.slice(0, 10);
+    return day === today ? "completedToday" : "rest";
+  }
+  const due = task.due_at ? task.due_at.slice(0, 10) : null;
+  if (!due || isDueToday(task, today) || (due < today && !task.recurrence_type)) {
+    return "outstanding";
+  }
+  if (task.recurrence_type !== "daily" && due > today && due <= addDaysStr(today, 7)) {
+    return "upcoming";
+  }
+  return "rest";
 }

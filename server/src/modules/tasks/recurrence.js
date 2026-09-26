@@ -11,6 +11,19 @@
 // A recurring task is a single row that "rolls over" on completion: the next
 // occurrence is written into due_at (YYYY-MM-DD) with completion reset, so the
 // UI always shows the current instance. due_time holds the daily deadline time.
+//
+// This file is also the app's date engine, so the calendar module imports the
+// generic helpers from here. Two kinds of value live in the DB and they must
+// never be compared as if they were the same thing:
+//
+//   * Plain dates and wall-clock times ("2026-09-26", "19:30") — already in the
+//     viewer's frame of reference (tasks.due_at, occurrence_date, meal_plan.date).
+//     Slicing their head is correct.
+//   * Absolute instants, always stored in UTC: SQLite's `datetime('now')` and
+//     Google Calendar's `dateTime`. Slicing their head yields the *UTC* day, a
+//     different day from the viewer's for the last `|offset|` hours of every
+//     evening. localDayStr/localTimeStr are the only correct way to read those,
+//     which is why the server stamps the viewer's frame onto the wire.
 
 export const DAY_INDEX = { MO: 1, TU: 2, WE: 3, TH: 4, FR: 5, SA: 6, SU: 0 };
 export const WEEKDAY_CODES = ["MO", "TU", "WE", "TH", "FR"];
@@ -26,8 +39,32 @@ export function parseDays(daysOfWeekText) {
   }
 }
 
+// Intl throws a RangeError on a zone it doesn't recognise, and the zone arrives
+// straight off an `X-Timezone` request header. Runtimes only accept canonical
+// names, so a legacy alias some browser still emits (e.g. "Europe/Reykjavik" vs
+// "Atlantic/Reykjavik") would otherwise turn every date-sensitive route into a
+// 500. Validate once per zone and fall back to the server's own frame, which is
+// what an absent header already does.
+const zoneOk = new Map();
+
+function safeTimeZone(timeZone) {
+  if (!timeZone) return null;
+  const cached = zoneOk.get(timeZone);
+  if (cached !== undefined) return cached;
+  let valid = null;
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone }).format();
+    valid = timeZone;
+  } catch {
+    valid = null;
+  }
+  zoneOk.set(timeZone, valid);
+  return valid;
+}
+
 export function todayStr(timeZone) {
-  if (!timeZone) {
+  const zone = safeTimeZone(timeZone);
+  if (!zone) {
     const d = new Date();
     return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
   }
@@ -36,7 +73,7 @@ export function todayStr(timeZone) {
   // "today" would cross over a day early for viewers behind UTC. Falls back to
   // the UTC date when no timezone is known (cron jobs, direct API callers).
   const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone,
+    timeZone: zone,
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
@@ -61,6 +98,65 @@ function dateFrom(y, m, d) {
 
 export function daysBetween(a, b) {
   return Math.round((new Date(`${b}T12:00:00`) - new Date(`${a}T12:00:00`)) / 86400000);
+}
+
+// Parse a stored UTC timestamp into an instant.
+//   "2026-09-26 03:12:00"       SQLite's datetime('now') — UTC, no zone marker
+//   "2026-09-26T03:12:00.000Z"  toISOString()
+//   "2026-09-26T03:12:00Z"      Google Calendar dateTime
+//   "2026-09-26"                plain date, anchored at UTC midnight
+// A value carrying an explicit offset or `Z` is authoritative; the space-separated
+// form is UTC because that is what SQLite writes; a bare local wall clock carries
+// no zone to convert from, so it is read back as-is.
+function parseStoredInstant(value) {
+  const raw = value.trim();
+  if (!raw) return null;
+  if (raw.length <= 10) {
+    const d = new Date(`${raw}T00:00:00Z`);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+  const hasZone = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(raw);
+  const d = new Date(hasZone ? raw : `${raw.replace(" ", "T")}Z`);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+// One Intl pass per instant. `hourCycle: "h23"` keeps midnight at "00" rather
+// than "24", which is what the "HH:MM" consumers expect.
+function formatInZone(at, timeZone) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: safeTimeZone(timeZone) || "UTC",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(at);
+  const part = (type) => parts.find((p) => p.type === type)?.value || "";
+  return { date: `${part("year")}-${part("month")}-${part("day")}`, time: `${part("hour")}:${part("minute")}` };
+}
+
+// The viewer's calendar day (YYYY-MM-DD) for an instant stored in UTC — the
+// counterpart of slicing a timestamp, returning the day the viewer actually
+// experienced rather than the UTC day. Null when missing or unparseable.
+export function localDayStr(value, timeZone) {
+  if (!value) return null;
+  const at = parseStoredInstant(value);
+  if (!at) return null;
+  // No usable zone (cron job, direct API call, unrecognised alias): the stored
+  // value is UTC and so is the server's frame, which is what todayStr() reports.
+  if (!safeTimeZone(timeZone)) return value.slice(0, 10);
+  return formatInZone(at, timeZone).date;
+}
+
+// The viewer's wall-clock time (HH:MM, 24h) for an instant stored in UTC, so a
+// synced calendar event renders at the hour the viewer will actually turn up.
+export function localTimeStr(value, timeZone) {
+  if (!value) return null;
+  const at = parseStoredInstant(value);
+  if (!at) return null;
+  if (!safeTimeZone(timeZone)) return value.slice(11, 16) || null;
+  return formatInZone(at, timeZone).time;
 }
 
 function patternPeriod(task) {

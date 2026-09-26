@@ -9,13 +9,7 @@ import {
   getTaskSettings, getTaskCategories,
 } from "../../api.js";
 import { usePolling } from "../../realtime.js";
-import { isFullyDone, isOutstanding, todayStr } from "./taskUtils.js";
-
-function addDaysStr(day, n) {
-  const d = new Date(`${day}T12:00:00`);
-  d.setDate(d.getDate() + n);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
+import { isFullyDone, isOutstanding, taskBucket, todayStr } from "./taskUtils.js";
 
 // Whole-day difference `later` – `earlier` for YYYY-MM-DD strings.
 function daysBetween(later, earlier) {
@@ -95,11 +89,14 @@ export default function TasksPage({ user, memberId, member, taskTarget, onTaskTa
   );
 
   // The list is bucketed the same way on every view; the Today / Upcoming / All
-  // toggle picks which buckets are shown:
-  //   1. Today's Outstanding — not done, and either due today or (non-repeating
-  //      only) overdue. Overdue tasks render with an "Overdue X days" badge.
-  //   2. Upcoming — not done, no due date or due within the next 7 days, and
-  //      daily repeats are excluded (they live in "today").
+  // toggle picks which buckets are shown. `taskBucket` owns the rule (shared with
+  // the badges and the server tests) so this page and the dashboard's "today's
+  // tasks" panel can never drift apart on what counts as due today:
+  //   1. Today's Outstanding — not done, and today's work: an instance today, a
+  //      due date today, no due date at all, or (non-repeating only) overdue.
+  //      Overdue tasks render with an "Overdue X days" badge.
+  //   2. Upcoming — not done and due within the next 7 days; daily repeats are
+  //      excluded (they live in "today").
   //   3. Today's Completed — anything finished sometime today (its instance or
   //      completed_at date matches today's local date).
   //   4. All Other — the remainder (completed earlier, due further out, etc.).
@@ -110,7 +107,6 @@ export default function TasksPage({ user, memberId, member, taskTarget, onTaskTa
     if (memberFilter) {
       list = list.filter((t) => (t.assignees || []).some((a) => a.id === memberFilter));
     }
-    const todayPlus7 = addDaysStr(today, 7);
     const byDue = (a, b) => {
       const ad = a.due_at ? a.due_at.slice(0, 10) : "9999-99-99";
       const bd = b.due_at ? b.due_at.slice(0, 10) : "9999-99-99";
@@ -120,25 +116,20 @@ export default function TasksPage({ user, memberId, member, taskTarget, onTaskTa
     const outstanding = [];
     const upcoming = [];
     const completedToday = [];
-    const matched = new Set();
+    const rest = [];
     for (const t of list) {
-      const due = t.due_at ? t.due_at.slice(0, 10) : null;
-      if (!t.completed_at) {
-        if (due === today || (due && due < today && !t.recurrence_type)) {
-          outstanding.push(t); matched.add(t.id);
-        } else if (t.recurrence_type !== "daily" && (!due || (due > today && due <= todayPlus7))) {
-          upcoming.push(t); matched.add(t.id);
-        }
-      } else if ((t.completed_at || "").slice(0, 10) === today) {
-        completedToday.push(t); matched.add(t.id);
-      }
+      const bucket = taskBucket(t, today);
+      if (bucket === "outstanding") outstanding.push(t);
+      else if (bucket === "upcoming") upcoming.push(t);
+      else if (bucket === "completedToday") completedToday.push(t);
+      else rest.push(t);
     }
     outstanding.sort(byDue);
     upcoming.sort(byDue);
     completedToday.sort(
       (a, b) => String(b.completed_at).localeCompare(String(a.completed_at)) || a.id - b.id
     );
-    const rest = list.filter((t) => !matched.has(t.id)).sort(byDue);
+    rest.sort(byDue);
     return { outstanding, upcoming, completedToday, rest };
   }, [tasks, memberFilter, today]);
 

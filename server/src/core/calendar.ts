@@ -2,6 +2,7 @@ import { and, asc, eq, gte, lt, sql } from "drizzle-orm";
 import type { DbClient } from "./db.js";
 import { calendarCache, calendarConnections } from "../schema.js";
 import { badRequest, notFound } from "./errors.js";
+import { localDayStr, localTimeStr } from "../modules/tasks/recurrence.js";
 
 export interface ConnectionWire {
   id: number;
@@ -169,9 +170,20 @@ interface EventWire {
   all_day: 0 | 1;
   color: string | null;
   calendar_label: string | null;
+  // The viewer's own frame for a timed event, which starts out as a UTC instant
+  // from Google (`dateTime`). Slicing that gives the UTC day and the UTC clock
+  // time, so a 7pm event would file itself under tomorrow and read as "14:00".
+  // All-day events are already plain local dates, so these are the date itself.
+  local_date: string | null;
+  local_time: string | null;
 }
 
-export async function getEvents(db: DbClient, start: string, end?: string): Promise<EventWire[]> {
+export async function getEvents(
+  db: DbClient,
+  start: string,
+  end?: string,
+  timezone?: string
+): Promise<EventWire[]> {
   const rows = await db
     .select({
       id: calendarCache.id,
@@ -209,6 +221,10 @@ export async function getEvents(db: DbClient, start: string, end?: string): Prom
     all_day: r.allDay ? 1 : 0,
     color: r.color,
     calendar_label: r.calendarLabel,
+    // All-day events are stored as a plain "YYYY-MM-DDTHH:MM:SS" local date, so
+    // converting them would shift the day; only timed events need it.
+    local_date: r.allDay ? r.startAt?.slice(0, 10) ?? null : localDayStr(r.startAt, timezone),
+    local_time: r.allDay ? null : localTimeStr(r.startAt, timezone),
   }));
 }
 

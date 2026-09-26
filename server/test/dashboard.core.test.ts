@@ -188,6 +188,76 @@ for (const backend of backends) {
         expect(rows[0].todays.find((t) => t.name === "Water plants")!.completed_at).toBeTruthy();
         expect(rows[0].done).toBe(1);
       });
+
+      it("counts a completion on the viewer's day, not the UTC one", async () => {
+        // The heart of the bug. A completion stamped 03:00 UTC on the 26th
+        // happened at 21:00 on the 25th in Chicago. The old count compared
+        // substr(completed_at,1,10) against the viewer's today, so that chore
+        // landed on the *26th's* tally and the household's "done today" number
+        // was wrong for the last few hours of every evening.
+        //
+        // Every timestamp below is built from the Chicago day rather than from
+        // "now", so the UTC date genuinely differs from the local day and the
+        // test discriminates at any hour the suite happens to run.
+        const ZONE = "America/Chicago";
+        const day = todayStr(ZONE);
+        const alice = await seedUser(db, { name: "Alice" });
+        // 06:00 on the Chicago day — same day in UTC, counts either way.
+        const morning = await seedTask(db, { name: "Early chore", dueAt: day, completedAt: `${day}T06:00:00` });
+        await link(db, morning.id, alice.id);
+        // 03:00 UTC the NEXT day — which is 21:00 on the Chicago day. The old
+        // comparison read the UTC head ("the 26th") and missed this one.
+        const evening = await seedTask(db, {
+          name: "Evening chore",
+          dueAt: day,
+          completedAt: `${addDays(day, 1)}T03:00:00`,
+        });
+        await link(db, evening.id, alice.id);
+        // Finished two local days ago: not today's work in any zone.
+        const stale = await seedTask(db, {
+          name: "Old chore",
+          dueAt: addDays(day, -2),
+          completedAt: `${addDays(day, -2)}T20:00:00`,
+        });
+        await link(db, stale.id, alice.id);
+
+        const rows = await dashboard.childTodayRows(db.db, [alice.id], ZONE);
+        expect(rows[0].completed_today_count).toBe(2);
+        // Read as a UTC day, the same three rows file the evening chore on the
+        // next day and only the morning one counts — the pre-fix behaviour, and
+        // the proof that the query result now depends on the viewer's zone.
+        const asUtc = await dashboard.childTodayRows(db.db, [alice.id], "UTC");
+        expect(asUtc[0].completed_today_count).toBe(1);
+      });
+
+      it("stamps completed_day on a completed occurrence for the client's grouping", async () => {
+        // `todays` carries open tasks and anything with an occurrence row, so a
+        // finished repeat is the case where the client both shows a done count
+        // and buckets the day — the stamping is observable there.
+        const ZONE = "America/Chicago";
+        const day = todayStr(ZONE);
+        const alice = await seedUser(db, { name: "Alice" });
+        const rec = await seedTask(db, { name: "Water plants", dueAt: day, completedAt: null });
+        await link(db, rec.id, alice.id);
+        await db.db.insert(s.taskOccurrences).values({
+          taskId: rec.id,
+          occurrenceDate: day,
+          // 21:00 the day before, i.e. a UTC date one day ahead of the local day.
+          completedAt: `${addDays(day, 1)}T03:00:00`,
+          completedBy: alice.id,
+        }).run();
+
+        const rows = await dashboard.childTodayRows(db.db, [alice.id], ZONE);
+        const wire = rows[0].todays.find((t) => t.name === "Water plants")!;
+        expect(wire.completed_at).toBe(`${addDays(day, 1)}T03:00:00`);
+        // The viewer's day, not the UTC head of the stamp.
+        expect(wire.completed_day).toBe(day);
+        expect(wire.reviewed_day).toBeNull();
+        // "n of m done" is a plain truthiness count, so it needs the flag, not
+        // the day; the day is what the list sections group on.
+        expect(rows[0].done).toBe(1);
+        expect(rows[0].total).toBe(1);
+      });
     });
 
     describe("getDashboard", () => {

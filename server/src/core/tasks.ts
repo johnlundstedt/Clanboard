@@ -5,7 +5,14 @@ import { taskAssignees, taskCategories, taskOccurrences, tasks, users } from "..
 import { badRequest, forbidden, notFound } from "./errors.js";
 import { hasCap, canAssign, type LoggedInUser } from "./caps.js";
 import { autoAssignIcon } from "../modules/tasks/icon-catalog.js";
-import { addDays, nextOccurrence, occurrenceIndex, todayStr, withinRange } from "../modules/tasks/recurrence.js";
+import {
+  addDays,
+  localDayStr,
+  nextOccurrence,
+  occurrenceIndex,
+  todayStr,
+  withinRange,
+} from "../modules/tasks/recurrence.js";
 
 // ---------------------------------------------------------------------------
 // Wire shapes. The rest of the app consumes snake_case rows, so Drizzle rows
@@ -31,6 +38,24 @@ export interface TaskWire {
   due_time: string | null;
   icon: string | null;
   created_at: string;
+  // completed_at / reviewed_at are absolute instants stored in UTC (SQLite's
+  // datetime('now')). Their first 10 characters are therefore the *UTC* day, not
+  // the day the task was actually done on, and the two disagree for the last
+  // |UTC offset| hours of every evening. `completed_day` / `reviewed_day` carry
+  // the viewer's own calendar day for the same instant, so the client can group
+  // by day without converting. Null when the timestamp is absent.
+  completed_day?: string | null;
+  reviewed_day?: string | null;
+  // True when the task has a materialized occurrence on the canonical `today`.
+  // A repeat whose rolling `due_at` sits on a later day still has an instance
+  // scheduled for today, and the dashboard counts that as due today — the client
+  // needs the same fact or it files the task under "upcoming" and drops it from
+  // today's list and badges.
+  due_today?: boolean;
+  // Canonical "today" (YYYY-MM-DD) in the viewer's timezone, stamped on every row
+  // by listTasks so the client buckets the list with the same day the schedule
+  // and due_at values were computed against.
+  today?: string;
   assignees?: { id: number; name: string }[];
   assigned_to?: number | null;
   category_name?: string | null;
@@ -58,6 +83,9 @@ export function mapTaskRow(t: DrizzleTask): TaskWire {
     due_time: t.dueTime,
     icon: t.icon,
     created_at: t.createdAt,
+    due_today: false,
+    completed_day: null,
+    reviewed_day: null,
   };
 }
 
@@ -116,7 +144,12 @@ export async function listTasks(
     .all();
 
   const today = query.timezone ? todayStr(query.timezone) : todayStr();
-  const wired = await annotateTodayOccurrences(db, await attachAssignees(db, rows.map(mapTaskRow)), today);
+  const wired = await annotateTodayOccurrences(
+    db,
+    await attachAssignees(db, rows.map(mapTaskRow)),
+    today,
+    query.timezone
+  );
   // Stamp the canonical "today" (the same day the schedule and occurrence
   // annotations were computed against) on every row so the client buckets the
   // list with one consistent day — the browser's local date can lag or lead
@@ -223,10 +256,16 @@ async function attachAssignees(db: DbClient, tasksOut: TaskWire[]): Promise<Task
 // the stored occurrence for today's local date so list/dashboard taps render
 // the check that "stuck". Non-recurring tasks have no occurrences and are left
 // untouched (their row completed_at is authoritative).
+//
+// It also stamps the viewer-frame facts the client buckets on: `due_today` (an
+// instance exists for today) and `completed_day`/`reviewed_day` (the viewer's
+// calendar day for a UTC completion timestamp). Doing it in one pass keeps every
+// read path agreeing on what "today" means.
 export async function annotateTodayOccurrences(
   db: DbClient,
   tasksOut: TaskWire[],
-  today: string
+  today: string,
+  timezone?: string
 ): Promise<TaskWire[]> {
   if (!tasksOut.length) return tasksOut;
   const occs = await db
@@ -243,10 +282,22 @@ export async function annotateTodayOccurrences(
 
   for (const t of tasksOut) {
     const o = byTask.get(t.id);
-    if (o?.completedAt) {
-      t.completed_at = o.completedAt;
-      if (o.reviewedAt) t.reviewed_at = o.reviewedAt;
+    if (o) {
+      // An instance scheduled for today means the task is due today even when the
+      // rolling `due_at` already points at a later occurrence (a repeat matching
+      // several days a week, or a row created with a future start date). The
+      // dashboard treats that as due today, so the flag keeps the list sections
+      // and the member badges in step with it.
+      t.due_today = true;
+      if (o.completedAt) {
+        t.completed_at = o.completedAt;
+        if (o.reviewedAt) t.reviewed_at = o.reviewedAt;
+      }
     }
+    // Last, once completed_at/reviewed_at are final: the day the viewer did the
+    // task, which is not the UTC day the timestamp was written in.
+    t.completed_day = localDayStr(t.completed_at, timezone);
+    t.reviewed_day = localDayStr(t.reviewed_at, timezone);
   }
   return tasksOut;
 }
@@ -355,8 +406,18 @@ export async function materializeTaskOccurrences(
     // rows additionally clear completed_at/reviewed_at as the finished day
     // moves out of "today". Overdue-non-repeating rows never appear here and
     // keep accumulating overdue days.
+    //
+    // ...but only for a pass that knows whose day "passed" means. The 15-minute
+    // module job sweeps the whole household with neither a task nor a zone, so
+    // its `today` is a bare UTC date — already tomorrow for the Americas all
+    // evening. Rolling on that pushed every household's row a day early and
+    // stranded the still-pending instance the UI lists as today's work. Every
+    // viewer-driven pass (a read, or a task-scoped create/update) still rolls,
+    // because it has a real zone. Materializing the rows themselves is
+    // timezone-agnostic and always happens.
+    const rollable = opts.task_id !== undefined || Boolean(opts.timezone);
     let rollSteps = 0;
-    while (task.dueAt && task.dueAt.slice(0, 10) < today && rollSteps < 100) {
+    while (rollable && task.dueAt && task.dueAt.slice(0, 10) < today && rollSteps < 100) {
       const next = nextOccurrence(rec, task.dueAt.slice(0, 10));
       const afterN = task.recurrenceCount;
       const reached =
@@ -382,8 +443,9 @@ export async function materializeTaskOccurrences(
     // A repeating task with no due date yet (legacy rows created before the
     // auto-fill existed) resolves to its current/next occurrence so it never
     // silently drops out of the list: a daily chore lands on "today", a
-    // weekly one on its next scheduled day.
-    if (task.recurrenceType && !task.dueAt) {
+    // weekly one on its next scheduled day. Same reasoning as the roll above —
+    // picking *today's* date needs to know whose today that is.
+    if (rollable && task.recurrenceType && !task.dueAt) {
       const next = nextOccurrence(rec, addDays(today, -1));
       if (next && next <= through && withinRange(rec, next)) {
         await db.update(tasks).set({ dueAt: next }).where(eq(tasks.id, task.id)).run();
@@ -444,8 +506,12 @@ export async function taskOccurrenceHistory(db: DbClient, date?: string, timezon
       occurrence_date: r.occ.occurrenceDate,
       assignees: byTask.get(r.occ.taskId) ?? [],
       completed_at: r.occ.completedAt,
+      // The viewer's day for the UTC completion stamp, so a review screen groups
+      // by when it was actually done rather than by the UTC day.
+      completed_day: localDayStr(r.occ.completedAt, timezone),
       completed_by: r.occ.completedBy,
       reviewed_at: r.occ.reviewedAt,
+      reviewed_day: localDayStr(r.occ.reviewedAt, timezone),
     })),
   };
 }
@@ -641,12 +707,43 @@ async function getTaskOr404(db: DbClient, id: number): Promise<DrizzleTask> {
 // does NOT count as fully done until an adult also reviews it. A recurring
 // task is marked on its own instance row WITHOUT advancing the rolling row, so
 // today's stays checked and tomorrow's is a fresh, uncompleted occurrence.
+// Which instance a complete/undo/review acts on.
+//
+// The rolling `due_at` is NOT a safe stand-in for "the one the family is
+// looking at". A repeat gets its row advanced once the instance day has passed,
+// and the background job decides that on a bare UTC day — which is already
+// tomorrow for the Americas during the evening. That leaves today's instance
+// still pending while `due_at` points at the next one, and the list/dashboard
+// correctly show the task under "today" on the strength of that pending row
+// (that is what `due_today` reports). Completing `due_at`'s date in that state
+// marks tomorrow's instance done and leaves today's untouched, so the day's
+// total never moves. Prefer today's row, and only fall back to the rolling date
+// when today has no instance of its own.
+async function activeOccurrenceDate(
+  db: DbClient,
+  task: DrizzleTask,
+  timezone?: string
+): Promise<string> {
+  const today = todayStr(timezone);
+  if (task.recurrenceType) {
+    const todays = await db
+      .select({ occurrenceDate: taskOccurrences.occurrenceDate })
+      .from(taskOccurrences)
+      .where(
+        and(eq(taskOccurrences.taskId, task.id), eq(taskOccurrences.occurrenceDate, today))
+      )
+      .get();
+    if (todays) return today;
+  }
+  return task.dueAt ? task.dueAt.slice(0, 10) : today;
+}
+
 export async function completeTask(db: DbClient, user: LoggedInUser, id: number, timezone?: string) {
   const task = await getTaskOr404(db, id);
   await assertCanComplete(db, user, task);
 
   if (task.recurrenceType && task.dueAt) {
-    const occDate = task.dueAt.slice(0, 10);
+    const occDate = await activeOccurrenceDate(db, task, timezone);
     await db
       .insert(taskOccurrences)
       .values({ taskId: id, occurrenceDate: occDate, completedAt: null })
@@ -674,7 +771,7 @@ export async function uncompleteTask(db: DbClient, user: LoggedInUser, id: numbe
   const task = await getTaskOr404(db, id);
   await assertCanComplete(db, user, task);
   await db.update(tasks).set({ completedAt: null, reviewedAt: null }).where(eq(tasks.id, id)).run();
-  const occDate = task.recurrenceType && task.dueAt ? task.dueAt.slice(0, 10) : todayStr(timezone);
+  const occDate = await activeOccurrenceDate(db, task, timezone);
   await db
     .update(taskOccurrences)
     .set({ completedAt: null, completedBy: null, reviewedAt: null })
@@ -687,7 +784,7 @@ export async function reviewTask(db: DbClient, user: LoggedInUser, id: number, t
   if (!(await hasCap(db, user, "tasks", "review"))) throw forbidden("Your role doesn't allow this action.");
   const task = await getTaskOr404(db, id);
   await db.update(tasks).set({ reviewedAt: sql`datetime('now')` }).where(eq(tasks.id, id)).run();
-  const occDate = task.recurrenceType && task.dueAt ? task.dueAt.slice(0, 10) : todayStr(timezone);
+  const occDate = await activeOccurrenceDate(db, task, timezone);
   await db
     .update(taskOccurrences)
     .set({ reviewedAt: sql`datetime('now')` })
@@ -700,7 +797,7 @@ export async function unreviewTask(db: DbClient, user: LoggedInUser, id: number,
   if (!(await hasCap(db, user, "tasks", "review"))) throw forbidden("Your role doesn't allow this action.");
   const task = await getTaskOr404(db, id);
   await db.update(tasks).set({ reviewedAt: null }).where(eq(tasks.id, id)).run();
-  const occDate = task.recurrenceType && task.dueAt ? task.dueAt.slice(0, 10) : todayStr(timezone);
+  const occDate = await activeOccurrenceDate(db, task, timezone);
   await db
     .update(taskOccurrences)
     .set({ reviewedAt: null })
@@ -857,8 +954,18 @@ export async function tasksToday(db: DbClient, date?: string, timezone?: string)
     .orderBy(tasks.id)
     .all();
 
-  const dueTodayMapped = await annotateTodayOccurrences(db, await attachAssignees(db, dueToday.map(mapTaskRow)), today);
-  const unassignedMapped = await annotateTodayOccurrences(db, await attachAssignees(db, unassigned.map(mapTaskRow)), today);
+  const dueTodayMapped = await annotateTodayOccurrences(
+    db,
+    await attachAssignees(db, dueToday.map(mapTaskRow)),
+    today,
+    timezone
+  );
+  const unassignedMapped = await annotateTodayOccurrences(
+    db,
+    await attachAssignees(db, unassigned.map(mapTaskRow)),
+    today,
+    timezone
+  );
 
   return {
     date: today,

@@ -243,6 +243,50 @@ for (const backend of backends) {
         const open = await calendar.getEvents(db.db, "2026-09-11T00:00:00");
         expect(open.map((e) => e.event_id)).toEqual(["e2", "e1", "e4"]);
       });
+
+      it("stamps a timed event's own day and clock time, and leaves all-day alone", async () => {
+        // Google returns a timed event as a UTC instant, so the client slicing
+        // start_at saw the UTC day and the UTC clock: a 19:00 local event read as
+        // "14:00" and filed itself under tomorrow. The server now stamps the
+        // viewer's frame. All-day events are a plain local date, so converting
+        // them would shift the day backwards.
+        const on = await calendar.createConnection(db.db, {
+          calendar_id: "family@group.calendar.google.com",
+          label: "Family",
+          enabled: true,
+        });
+        await db.db
+          .insert(s.calendarCache)
+          .values([
+            { connectionId: on.id, eventId: "t1", summary: "Dinner", startAt: "2026-09-11T23:00:00Z", endAt: "2026-09-12T00:00:00Z", allDay: false },
+            { connectionId: on.id, eventId: "a1", summary: "Field trip", startAt: "2026-09-11T00:00:00", endAt: "2026-09-12T00:00:00", allDay: true },
+          ])
+          .run();
+
+        const start = "2026-09-01T00:00:00Z";
+        const losAngeles = await calendar.getEvents(db.db, start, undefined, "America/Los_Angeles");
+        const dinner = losAngeles.find((e) => e.event_id === "t1")!;
+        expect(dinner.local_date).toBe("2026-09-11");
+        expect(dinner.local_time).toBe("16:00");
+        // The stored UTC instant is untouched; only the derived frame is added.
+        expect(dinner.start_at).toBe("2026-09-11T23:00:00Z");
+
+        const fieldTrip = losAngeles.find((e) => e.event_id === "a1")!;
+        expect(fieldTrip.local_date).toBe("2026-09-11");
+        expect(fieldTrip.local_time).toBeNull();
+
+        // Same event, viewer a few hours ahead: it moves, and with it the day.
+        const tokyo = await calendar.getEvents(db.db, start, undefined, "Asia/Tokyo");
+        const tokyoDinner = tokyo.find((e) => e.event_id === "t1")!;
+        expect(tokyoDinner.local_date).toBe("2026-09-12");
+        expect(tokyoDinner.local_time).toBe("08:00");
+
+        // With no zone on the request (cron, direct API) the UTC frame is the
+        // stored one, so a client that ignores the fields still reads it right.
+        const noZone = await calendar.getEvents(db.db, start);
+        expect(noZone.find((e) => e.event_id === "t1")!.local_date).toBe("2026-09-11");
+        expect(noZone.find((e) => e.event_id === "t1")!.local_time).toBe("23:00");
+      });
     });
 
     describe("sync flow failures", () => {

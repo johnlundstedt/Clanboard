@@ -111,14 +111,21 @@ export default function CalendarPage() {
     rangeLabel = `${fmtDate(start).slice(5).replace("-", "/")} – ${fmtDate(addDays(start, 6)).slice(5).replace("-", "/")}`;
   }
 
+  // start_at is a UTC instant for timed events, so its head is the UTC day and
+  // its clock time is UTC — an evening event used to file itself under tomorrow
+  // and read as "14:00". The server stamps the viewer's own day/time; fall back
+  // to the raw slices only if an older payload is ever served.
+  const eventDay = (e) => e.local_date || e.start_at.slice(0, 10);
+  const eventTime = (e) => e.local_time || e.start_at.slice(11, 16);
+
   const eventsForDate = (d) =>
     events
-      .filter((e) => e.start_at.slice(0, 10) === fmtDate(d))
+      .filter((e) => eventDay(e) === fmtDate(d))
       .sort((a, b) => a.start_at.localeCompare(b.start_at));
 
   const renderEvent = (e) => (
     <div key={e.id} className="cal-evt" style={{ borderLeft: `4px solid ${e.color || "#3b82f6"}` }}>
-      {!e.all_day && e.start_at && <span className="small">{e.start_at.slice(11, 16)} </span>}
+      {!e.all_day && e.start_at && <span className="small">{eventTime(e)} </span>}
       {e.summary}
     </div>
   );
@@ -226,7 +233,7 @@ export default function CalendarPage() {
                 {dayEvents.map((e) => (
                   <div key={e.id} className="cal-sched-evt">
                     <span className="dot" style={{ background: e.color || "#3b82f6" }} />
-                    <span className="time">{e.all_day ? "All-day" : e.start_at.slice(11, 16)}</span>
+                    <span className="time">{e.all_day ? "All-day" : eventTime(e)}</span>
                     <span className="grow">
                       {e.summary}
                       {e.location && <span className="small muted"> · {e.location}</span>}

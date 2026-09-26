@@ -79,9 +79,16 @@ app.delete("/connections/:id", (c) =>
 );
 
 // --- Events (read-only cache) ------------------------------------------------
+// The timezone is threaded through so the server can stamp each event's local
+// date/time; the client never converts.
 app.get("/", (c) =>
   respond(c, () =>
-    core.getEvents(containerDb, c.req.query("start") || new Date().toISOString(), c.req.query("end"))
+    core.getEvents(
+      containerDb,
+      c.req.query("start") || new Date().toISOString(),
+      c.req.query("end"),
+      c.get("timezone")
+    )
   )
 );
 

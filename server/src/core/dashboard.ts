@@ -2,7 +2,7 @@ import { and, asc, eq, inArray, isNotNull, isNull, notExists, or, sql } from "dr
 import type { DbClient } from "./db.js";
 import { getSetting, isModuleEnabled, setSetting } from "./db.js";
 import { mealPlan, taskAssignees, taskOccurrences, tasks, users } from "../schema.js";
-import { todayStr } from "../modules/tasks/recurrence.js";
+import { localDayStr, todayStr } from "../modules/tasks/recurrence.js";
 import { HttpError, badRequest } from "./errors.js";
 import { mapTaskRow, materializeTaskOccurrences } from "./tasks.js";
 
@@ -343,9 +343,12 @@ export async function childTodayRows(
     if (!entry) continue;
     const wire = mapTaskRow(row.task);
     if (row.occurrence) {
+      wire.due_today = true;
       wire.completed_at = row.occurrence.completedAt;
       if (row.occurrence.reviewedAt) wire.reviewed_at = row.occurrence.reviewedAt;
     }
+    wire.completed_day = localDayStr(wire.completed_at, timezone);
+    wire.reviewed_day = localDayStr(wire.reviewed_at, timezone);
     entry.todays.push(wire);
   }
   for (const entry of byChild.values()) {
@@ -353,20 +356,22 @@ export async function childTodayRows(
     entry.done = entry.todays.filter((t) => t.completed_at).length;
   }
 
-  // Today's completion counts per member, both in one grouped statement each
-  // (instead of two queries per member): tasks finished today, and completed
-  // recurring instances recorded in task_occurrences.
-  const completedByUser = await db
-    .select({ userId: taskAssignees.userId, c: sql<number>`count(*)` })
+  // Today's completion counts per member, in two statements (not two queries per
+  // member): tasks finished today, and completed recurring instances recorded in
+  // task_occurrences.
+  //
+  // The first one has to fetch the timestamps and bucket them here rather than
+  // compare `substr(completed_at,1,10)` in SQL: completed_at is a UTC instant
+  // while `today` is the viewer's calendar day, and for the last |UTC offset|
+  // hours of the evening those are different days — an evening completion was
+  // being filed under tomorrow. SQLite has no timezone database, so the
+  // conversion can only happen in JS. Still a single statement for the whole
+  // household.
+  const completedRows = await db
+    .select({ userId: taskAssignees.userId, completedAt: tasks.completedAt })
     .from(taskAssignees)
     .innerJoin(tasks, eq(taskAssignees.taskId, tasks.id))
-    .where(
-      and(
-        inArray(taskAssignees.userId, childIds),
-        sql`substr(${tasks.completedAt}, 1, 10) = ${today}`
-      )
-    )
-    .groupBy(taskAssignees.userId)
+    .where(and(inArray(taskAssignees.userId, childIds), isNotNull(tasks.completedAt)))
     .all();
   const occurredByUser = await db
     .select({ userId: taskAssignees.userId, c: sql<number>`count(*)` })
@@ -382,7 +387,12 @@ export async function childTodayRows(
     .groupBy(taskAssignees.userId)
     .all();
 
-  for (const r of [...completedByUser, ...occurredByUser]) {
+  for (const r of completedRows) {
+    if (localDayStr(r.completedAt, timezone) !== today) continue;
+    const entry = byChild.get(r.userId);
+    if (entry) entry.completed_today_count += 1;
+  }
+  for (const r of occurredByUser) {
     const entry = byChild.get(r.userId);
     if (entry) entry.completed_today_count += Number(r.c ?? 0);
   }

@@ -3,7 +3,11 @@ import { and, eq } from "drizzle-orm";
 import * as s from "../src/schema.js";
 import * as core from "../src/core/tasks.js";
 import { autoAssignIcon } from "../src/modules/tasks/icon-catalog.js";
-import { addDays, todayStr } from "../src/modules/tasks/recurrence.js";
+import { addDays, localDayStr, localTimeStr, todayStr } from "../src/modules/tasks/recurrence.js";
+// The client-side badge/section predicate, so the tests prove the two views
+// ("today" on the dashboard, and the list/badges) agree on the same task.
+import { isOutstanding, taskBucket } from "../../client/src/modules/tasks/taskUtils.js";
+import * as dashboard from "../src/core/dashboard.js";
 import {
   closeD1,
   makeD1Database,
@@ -277,9 +281,19 @@ for (const backend of backends) {
       await db.db.insert(s.taskAssignees).values({ taskId: task.id, userId: admin.id }).run();
 
       const res = await core.materializeTaskOccurrences(db.db);
-      const [after] = await db.db.select().from(s.tasks).where(eq(s.tasks.id, task.id)).all();
-      expect(after.dueAt).toBe(todayStr());
+      // The rows themselves are timezone-agnostic and still get materialized...
       expect(res.inserted).toBeGreaterThan(0);
+      // ...but the background sweep has no viewer, so it must not guess which
+      // day this repeat belongs to. On a bare UTC date it would pick tomorrow's
+      // for the Americas in the evening and re-create the drift.
+      const [unresolved] = await db.db.select().from(s.tasks).where(eq(s.tasks.id, task.id)).all();
+      expect(unresolved.dueAt).toBeNull();
+
+      // A viewer's read resolves it, on their own clock.
+      const ZONE = "America/Chicago";
+      await core.listTasks(db.db, user, { timezone: ZONE });
+      const [after] = await db.db.select().from(s.tasks).where(eq(s.tasks.id, task.id)).all();
+      expect(after.dueAt).toBe(todayStr(ZONE));
     });
 
     it("materializes pending instances ahead of the rolling row", async () => {
@@ -313,6 +327,268 @@ for (const backend of backends) {
         .where(eq(s.taskOccurrences.taskId, task.id))
         .all();
       expect(pending.every((p) => p.completedAt === null)).toBe(true);
+    });
+
+    it("flags due_today for a repeat whose row sits on a later day", async () => {
+      // A repeat on several weekdays a week, created with a start date of
+      // tomorrow: today still has a pending instance, so the dashboard counts it
+      // as due today ("0 of 1 done") even though the rolling due_at is tomorrow.
+      // Without the flag the list filed it under "upcoming" and the member badge
+      // showed nothing outstanding.
+      const admin = await seedUser(db, { name: "Admin", is_admin: true });
+      const user = snakeUser(admin);
+      const today = todayStr();
+      const tomorrow = addDays(today, 1);
+      const CODES = ["SU", "MO", "TU", "WE", "TH", "FR", "SA"];
+      const dow = (d: string) => CODES[new Date(`${d}T12:00:00`).getDay()];
+      await core.createTask(db.db, user, {
+        name: "Feed the fish",
+        due_at: tomorrow,
+        recurrence_type: "custom",
+        recurrence_interval: 1,
+        recurrence_period: "week",
+        recurrence_days_of_week: [dow(today), dow(tomorrow)],
+        recurrence_start_date: today,
+        assigned_ids: [admin.id],
+      });
+
+      const [listed] = await core.listTasks(db.db, user, {});
+      expect(listed.due_at?.slice(0, 10)).toBe(tomorrow);
+      expect(listed.due_today).toBe(true);
+      // The client badge/section predicate reads that same flag, so the two
+      // views agree on what is due today.
+      expect(isOutstanding(listed, listed.today)).toBe(true);
+    });
+
+    it("leaves due_today false for a repeat with no instance today", async () => {
+      const admin = await seedUser(db, { name: "Admin", is_admin: true });
+      const user = snakeUser(admin);
+      const today = todayStr();
+      await core.createTask(db.db, user, {
+        name: "Water the plants",
+        // Starts in a week, so nothing is scheduled for today.
+        recurrence_type: "daily",
+        recurrence_interval: 7,
+        recurrence_period: "day",
+        recurrence_start_date: addDays(today, 7),
+        assigned_ids: [admin.id],
+      });
+
+      const [listed] = await core.listTasks(db.db, user, {});
+      expect(listed.due_today).toBe(false);
+      expect(isOutstanding(listed, listed.today)).toBe(false);
+    });
+
+    it("stamps completed_day in the viewer's day, and the section follows it", async () => {
+      // completeTask writes datetime('now') — a UTC instant. The "completed
+      // today" section has to group by the day the family experienced, which
+      // for the last few hours of the evening in the Americas is a day earlier
+      // than the UTC date those timestamps start with. Pinned to a zone well
+      // behind UTC so the gap is real regardless of when the suite runs.
+      const ZONE = "America/Chicago";
+      const admin = await seedUser(db, { name: "Admin", is_admin: true });
+      const user = snakeUser(admin);
+      const task = await core.createTask(db.db, user, {
+        name: "Walk the dog",
+        due_at: todayStr(ZONE),
+        assigned_ids: [admin.id],
+      });
+      await core.completeTask(db.db, user, task.id);
+
+      const [listed] = await core.listTasks(db.db, user, { timezone: ZONE });
+      expect(listed.completed_at).toMatch(/^\d{4}-\d{2}-\d{2} /);
+      // The day it was actually done, on the viewer's clock.
+      expect(listed.completed_day).toBe(todayStr(ZONE));
+      expect(listed.reviewed_day).toBeNull();
+      // ...which is what keeps the task under "completed today" and off "rest".
+      expect(taskBucket(listed, listed.today)).toBe("completedToday");
+    });
+
+    it("recomputes completed_day per viewer rather than once at completion", async () => {
+      // The stored instant is fixed and shared by everyone; the stamped day is
+      // the only per-viewer part, so the same row reads as done today in Iceland
+      // and done yesterday in Chicago on the same evening.
+      const admin = await seedUser(db, { name: "Admin", is_admin: true });
+      const user = snakeUser(admin);
+      const task = await core.createTask(db.db, user, {
+        name: "Put away laundry",
+        assigned_ids: [admin.id],
+      });
+      await core.completeTask(db.db, user, task.id);
+
+      const [chicago] = await core.listTasks(db.db, user, { timezone: "America/Chicago" });
+      const [reykjavik] = await core.listTasks(db.db, user, { timezone: "Atlantic/Reykjavik" });
+      expect(chicago.completed_at).toBe(reykjavik.completed_at);
+      expect(chicago.completed_day).toBe(localDayStr(chicago.completed_at, "America/Chicago"));
+      expect(reykjavik.completed_day).toBe(todayStr("Atlantic/Reykjavik"));
+    });
+
+    it("buckets every open task the same way the dashboard panel does", async () => {
+      // The regression this file exists for: the dashboard's "today's tasks" and
+      // the list sections/badges once disagreed, so a task showed as "0 of 2
+      // done" on the dashboard while the Tasks page filed it under "upcoming"
+      // with no badge. One shared rule now backs both, so pin them against each
+      // other across every shape a task can take.
+      const admin = await seedUser(db, { name: "Admin", is_admin: true });
+      const siggi = await seedUser(db, { name: "Siggi" });
+      const user = snakeUser(admin);
+      const today = todayStr();
+      const tomorrow = addDays(today, 1);
+      const CODES = ["SU", "MO", "TU", "WE", "TH", "FR", "SA"];
+      const dow = (d: string) => CODES[new Date(`${d}T12:00:00`).getDay()];
+      const make = (over: Partial<core.TaskInput>) =>
+        core.createTask(db.db, user, { assigned_ids: [siggi.id], ...over });
+
+      await make({ name: "No due date" });
+      await make({ name: "Due today", due_at: today });
+      await make({ name: "Due in three days", due_at: addDays(today, 3) });
+      await make({ name: "Due in ten days", due_at: addDays(today, 10) });
+      await make({ name: "Overdue", due_at: addDays(today, -2) });
+      await make({
+        name: "Daily chore",
+        recurrence_type: "daily",
+        recurrence_period: "day",
+        recurrence_interval: 1,
+        recurrence_start_date: today,
+      });
+      const rolled = await make({
+        name: "Multi-day repeat",
+        due_at: tomorrow,
+        recurrence_type: "custom",
+        recurrence_period: "week",
+        recurrence_interval: 1,
+        recurrence_days_of_week: [dow(today), dow(tomorrow)],
+        recurrence_start_date: today,
+      });
+      const finished = await make({ name: "Finished earlier", due_at: today });
+      await core.completeTask(db.db, user, finished.id);
+
+      const listed = await core.listTasks(db.db, user, {});
+      const bucketOf = (t: core.TaskWire) => taskBucket(t, t.today);
+      const clientOutstanding = listed
+        .filter((t) => bucketOf(t) === "outstanding")
+        .map((t) => t.name)
+        .sort();
+      const rows = await dashboard.childTodayRows(db.db, [siggi.id]);
+      const dashboardOpen = rows[0].todays
+        .filter((t) => !t.completed_at)
+        .map((t) => t.name)
+        .sort();
+
+      // A dateless open task is today's work on the dashboard, so it is today's
+      // work here too; a finished task belongs to neither.
+      expect(clientOutstanding).toEqual(dashboardOpen);
+      expect(clientOutstanding).toEqual([
+        "Daily chore",
+        "Due today",
+        "Multi-day repeat",
+        "No due date",
+        "Overdue",
+      ]);
+      expect(bucketOf(listed.find((t) => t.name === "No due date")!)).toBe("outstanding");
+      expect(bucketOf(listed.find((t) => t.name === "Due in three days")!)).toBe("upcoming");
+      expect(bucketOf(listed.find((t) => t.name === "Due in ten days")!)).toBe("rest");
+      // A finished task is nobody's outstanding work, whichever day it counts as.
+      expect(bucketOf(listed.find((t) => t.name === "Finished earlier")!)).not.toBe("outstanding");
+      expect(bucketOf(listed.find((t) => t.id === rolled.id)!)).toBe("outstanding");
+    });
+
+    it("leaves a pending instance alone when the background pass has no viewer", async () => {
+      // The 15-minute module job sweeps the household with neither a task nor a
+      // zone, so its `today` is a bare UTC date — already tomorrow for the
+      // Americas all evening. Rolling on that advanced the rolling row a day
+      // early and stranded the still-pending instance that the list and the
+      // dashboard both show as today's work. Completing it then marked
+      // *tomorrow's* instance done and today's total never moved.
+      const ZONE = "America/Chicago";
+      const admin = await seedUser(db, { name: "Admin", is_admin: true });
+      const user = snakeUser(admin);
+      const today = todayStr(ZONE);
+      const task = await core.createTask(db.db, user, {
+        name: "Brush teeth",
+        recurrence_type: "daily",
+        recurrence_interval: 1,
+        recurrence_start_date: addDays(today, -10),
+        due_at: today,
+        assigned_ids: [admin.id],
+      });
+      // Backdate it after creation (which rolls on its own) to a chore three
+      // days stale, as one nobody has ticked off yet. Every missed day is still
+      // a pending occurrence, so advancing the row is exactly what strands the
+      // instance the UI is showing.
+      const stale = addDays(today, -3);
+      await db.db
+        .update(s.tasks)
+        .set({ dueAt: stale, completedAt: null })
+        .where(eq(s.tasks.id, task.id))
+        .run();
+
+      // The background pass (what the cron calls every 15 minutes) must not
+      // decide the household's day has passed. On a bare UTC date it does so
+      // for the whole evening, pushing the row a day early every night.
+      const swept = await core.materializeTaskOccurrences(db.db);
+      expect(swept.advanced).toBe(0);
+      const [untouched] = await db.db.select().from(s.tasks).where(eq(s.tasks.id, task.id)).all();
+      expect(untouched.dueAt).toBe(stale);
+
+      // A viewer's read still rolls it, using their own zone — the sweep only
+      // defers that decision, it never cancels it.
+      await core.listTasks(db.db, user, { timezone: ZONE });
+      const [rolled] = await db.db.select().from(s.tasks).where(eq(s.tasks.id, task.id)).all();
+      expect(rolled.dueAt).toBe(today);
+    });
+
+    it("completes the instance it is showing, not the one due_at has rolled to", async () => {
+      // The state the background pass used to create: today's instance is still
+      // pending while the rolling row already points at tomorrow. Both views
+      // list the task under "today" on the strength of that row, so completing
+      // it has to mark that row — the dashboard's "done today" total is read
+      // straight off today's occurrence.
+      const ZONE = "America/Chicago";
+      const admin = await seedUser(db, { name: "Admin", is_admin: true });
+      const user = snakeUser(admin);
+      const today = todayStr(ZONE);
+      const tomorrow = addDays(today, 1);
+      const task = await core.createTask(db.db, user, {
+        name: "Brush teeth",
+        recurrence_type: "daily",
+        recurrence_interval: 1,
+        recurrence_start_date: today,
+        due_at: tomorrow,
+        assigned_ids: [admin.id],
+      });
+      // Today's instance exists and is pending; that is what makes it due today.
+      await db.db
+        .insert(s.taskOccurrences)
+        .values({ taskId: task.id, occurrenceDate: today, completedAt: null })
+        .onConflictDoNothing()
+        .run();
+      await db.db
+        .insert(s.taskOccurrences)
+        .values({ taskId: task.id, occurrenceDate: tomorrow, completedAt: null })
+        .onConflictDoNothing()
+        .run();
+
+      const [listed] = await core.listTasks(db.db, user, { timezone: ZONE });
+      expect(listed.due_today).toBe(true);
+      expect(listed.completed_at).toBeNull();
+
+      await core.completeTask(db.db, user, task.id, ZONE);
+
+      const done = await db.db
+        .select({ date: s.taskOccurrences.occurrenceDate, at: s.taskOccurrences.completedAt })
+        .from(s.taskOccurrences)
+        .where(eq(s.taskOccurrences.taskId, task.id))
+        .all();
+      const byDay = Object.fromEntries(done.map((o) => [o.date, o.at]));
+      expect(byDay[today]).toBeTruthy();
+      // Tomorrow's instance is untouched — the old code marked this one instead.
+      expect(byDay[tomorrow]).toBeNull();
+
+      // And the dashboard agrees: the wire and the tally both move.
+      const [after] = await core.listTasks(db.db, user, { timezone: ZONE });
+      expect(after.completed_at).toBeTruthy();
+      expect(taskBucket(after, after.today)).toBe("completedToday");
     });
 
     it("rolls a completed instance forward once its day has passed", async () => {
@@ -508,5 +784,74 @@ describe("autoAssignIcon keywords", () => {
     expect(autoAssignIcon("Wash the dishes")).toBe("shirt");
     expect(autoAssignIcon("Clean the kitchen")).toBe("sparkles");
     expect(autoAssignIcon("Fix the computer mouse")).toBe("wrench");
+  });
+});
+
+// Pure date conversions. These pin the exact bug this exists for: a completion
+// timestamp is written in UTC, so the day it lands on depends on the viewer's
+// offset, and for the last |offset| hours of the evening that is *not* the day
+// the family experienced.
+describe("UTC instant -> viewer's day", () => {
+  // 03:12 UTC on the 26th is 22:12 on the 25th in Chicago: the case that put an
+  // evening chore on the following day.
+  const EVENING_UTC = "2026-09-26 03:12:00";
+
+  it("returns the viewer's calendar day, not the UTC day", () => {
+    expect(localDayStr(EVENING_UTC, "America/Chicago")).toBe("2026-09-25");
+    expect(localDayStr(EVENING_UTC, "UTC")).toBe("2026-09-26");
+    expect(localDayStr(EVENING_UTC, "Pacific/Auckland")).toBe("2026-09-26");
+  });
+
+  it("reads every timestamp shape the app stores", () => {
+    // SQLite datetime('now'), toISOString(), and Google's dateTime all mean the
+    // same instant and must all resolve to the same local day.
+    expect(localDayStr("2026-09-26T03:12:00.000Z", "America/Chicago")).toBe("2026-09-25");
+    expect(localDayStr("2026-09-26T03:12:00Z", "America/Chicago")).toBe("2026-09-25");
+    expect(localDayStr(EVENING_UTC, "America/Chicago")).toBe("2026-09-25");
+    // An explicit offset is authoritative rather than assumed to be UTC.
+    expect(localDayStr("2026-09-26T03:12:00+02:00", "America/Chicago")).toBe("2026-09-25");
+  });
+
+  it("returns the viewer's clock time for a synced event", () => {
+    expect(localTimeStr("2026-09-25T23:00:00Z", "America/Los_Angeles")).toBe("16:00");
+    expect(localTimeStr("2026-09-26T00:30:00Z", "Europe/London")).toBe("01:30");
+    // Midnight must read "00", not "24".
+    expect(localTimeStr("2026-09-26T00:00:00Z", "UTC")).toBe("00:00");
+  });
+
+  it("follows the offset across a DST change rather than a fixed one", () => {
+    // 2026-11-01 01:30 happens twice in Chicago; the instant is unambiguous, so
+    // it must resolve with the pre-transition offset (-5), not the -6 that a
+    // hardcoded winter offset would give.
+    expect(localDayStr("2026-11-01 05:30:00", "America/Chicago")).toBe("2026-11-01");
+    expect(localTimeStr("2026-11-01 05:30:00", "America/Chicago")).toBe("00:30");
+    // And the spring-forward side: still on standard time at 04:30 UTC.
+    expect(localDayStr("2026-03-08 04:30:00", "America/Chicago")).toBe("2026-03-07");
+    expect(localTimeStr("2026-03-08 04:30:00", "America/Chicago")).toBe("22:30");
+  });
+
+  it("falls back to the stored (UTC) day when no zone is known", () => {
+    // Cron jobs and direct API callers send no X-Timezone; the server's own frame
+    // is UTC, which is what todayStr() reports for them too.
+    expect(localDayStr(EVENING_UTC, undefined)).toBe("2026-09-26");
+    expect(localTimeStr(EVENING_UTC, undefined)).toBe("03:12");
+  });
+
+  it("survives a zone this runtime doesn't know instead of throwing", () => {
+    // The zone arrives off a request header. Intl throws a RangeError on an
+    // unrecognised one, and runtimes only accept canonical names, so a legacy
+    // alias would otherwise 500 every date-sensitive route.
+    for (const zone of ["Not/AZone", "Europe/Reykjavik", "totally bogus"]) {
+      expect(() => localDayStr(EVENING_UTC, zone)).not.toThrow();
+      expect(localDayStr(EVENING_UTC, zone)).toBe("2026-09-26");
+      expect(todayStr(zone)).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    }
+  });
+
+  it("returns null for a missing or unparseable timestamp", () => {
+    expect(localDayStr(null, "America/Chicago")).toBeNull();
+    expect(localDayStr("", "America/Chicago")).toBeNull();
+    expect(localDayStr("not a date", "America/Chicago")).toBeNull();
+    expect(localTimeStr(null, "America/Chicago")).toBeNull();
   });
 });
