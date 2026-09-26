@@ -110,7 +110,9 @@ async function ensureMiniflare(): Promise<D1Database> {
     // In-memory storage: a previous aborted provisioning (or another vitest
     // worker in the same run) would otherwise leak schema into the default
     // disk-backed location and break the "fresh database" guarantee.
-    persist: false,
+    // (This was `persist` in miniflare 2; v3 spells it per-plugin, and a
+    // global `persist` is silently ignored rather than rejected at runtime.)
+    d1Persist: false,
     d1Databases: ["CLANBOARD"],
     r2Buckets: ["UPLOADS"],
   });
