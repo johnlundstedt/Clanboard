@@ -493,6 +493,55 @@ for (const backend of backends) {
       expect(bucketOf(listed.find((t) => t.id === rolled.id)!)).toBe("outstanding");
     });
 
+    it("does not let a pending instance inherit the repeat's last completion", async () => {
+      // Every completion leaves a rolling completed_at on the parent row, and
+      // that marker outlives the day it was set. It survives the roll-forward
+      // (which only fires once due_at is in the past), so a repeat sitting on
+      // today's date with the marker still set has today's instance pending.
+      // Only overwriting on an actual completion let that marker stand in for it
+      // — the task reported itself done before anyone had done anything, and the
+      // day's total never moved.
+      const ZONE = "America/Chicago";
+      const admin = await seedUser(db, { name: "Admin", is_admin: true });
+      const user = snakeUser(admin);
+      const today = todayStr(ZONE);
+      const task = await core.createTask(db.db, user, {
+        name: "Feed tortoise",
+        recurrence_type: "daily",
+        recurrence_interval: 1,
+        recurrence_start_date: addDays(today, -2),
+        due_at: today,
+        assigned_ids: [admin.id],
+      });
+      // The marker, as a completion on an earlier day would have left it.
+      await db.db
+        .update(s.tasks)
+        .set({ completedAt: `${addDays(today, -1)} 18:00:00` })
+        .where(eq(s.tasks.id, task.id))
+        .run();
+
+      // Today's instance is pending, so that is what the wire must report.
+      const [listed] = await core.listTasks(db.db, user, { timezone: ZONE });
+      expect(listed.due_today).toBe(true);
+      expect(listed.completed_at).toBeNull();
+      expect(listed.completed_day).toBeNull();
+      expect(isOutstanding(listed, listed.today)).toBe(true);
+      expect(taskBucket(listed, listed.today)).toBe("outstanding");
+
+      // The dashboard must agree, or the badge and the panel diverge again.
+      const [child] = await dashboard.childTodayRows(db.db, [admin.id], ZONE);
+      expect(child.done).toBe(0);
+      expect(child.completed_today_count).toBe(0);
+      expect(child.todays.map((t) => t.name)).toEqual(["Feed tortoise"]);
+
+      // And once the instance is genuinely done, its own stamp is what shows.
+      await core.completeTask(db.db, user, task.id, ZONE);
+      const [done] = await core.listTasks(db.db, user, { timezone: ZONE });
+      expect(done.completed_at).not.toBeNull();
+      expect(done.completed_at).not.toBe(`${addDays(today, -1)} 18:00:00`);
+      expect(taskBucket(done, done.today)).toBe("completedToday");
+    });
+
     it("leaves a pending instance alone when the background pass has no viewer", async () => {
       // The 15-minute module job sweeps the household with neither a task nor a
       // zone, so its `today` is a bare UTC date — already tomorrow for the

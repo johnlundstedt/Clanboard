@@ -289,10 +289,13 @@ export async function annotateTodayOccurrences(
       // dashboard treats that as due today, so the flag keeps the list sections
       // and the member badges in step with it.
       t.due_today = true;
-      if (o.completedAt) {
-        t.completed_at = o.completedAt;
-        if (o.reviewedAt) t.reviewed_at = o.reviewedAt;
-      }
+      // That instance is the whole truth for the day, pending included. The
+      // parent row's completed_at is a rolling marker left by whenever the repeat
+      // was last ticked, and it must not stand in for an instance that is still
+      // outstanding — otherwise tomorrow's pending instance inherits last night's
+      // completion and reports itself done before anyone has done anything.
+      t.completed_at = o.completedAt;
+      t.reviewed_at = o.reviewedAt;
     }
     // Last, once completed_at/reviewed_at are final: the day the viewer did the
     // task, which is not the UTC day the timestamp was written in.

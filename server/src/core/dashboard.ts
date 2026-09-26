@@ -344,8 +344,11 @@ export async function childTodayRows(
     const wire = mapTaskRow(row.task);
     if (row.occurrence) {
       wire.due_today = true;
+      // Same rule as annotateTodayOccurrences: the instance row is the whole
+      // truth for the day, pending included, so a still-outstanding instance
+      // can't inherit the repeat's rolling completed_at and read as done.
       wire.completed_at = row.occurrence.completedAt;
-      if (row.occurrence.reviewedAt) wire.reviewed_at = row.occurrence.reviewedAt;
+      wire.reviewed_at = row.occurrence.reviewedAt;
     }
     wire.completed_day = localDayStr(wire.completed_at, timezone);
     wire.reviewed_day = localDayStr(wire.reviewed_at, timezone);
