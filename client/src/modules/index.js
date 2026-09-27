@@ -20,7 +20,7 @@ const modules = [
     icon: Home,
     default: true,
     locked: true, // Home is the landing view for everyone
-    desc: "Weather, household birthdays, and “what needs to be done today”, with quick-add tasks.",
+    desc: "Weather, today's calendar schedule, household birthdays, and “what needs to be done today”, with quick-add tasks.",
   },
   {
     name: "tasks",

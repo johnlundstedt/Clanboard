@@ -260,6 +260,117 @@ for (const backend of backends) {
       });
     });
 
+    describe("scheduleEvents", () => {
+      // The dashboard reads the Calendar module's cache, so these events are the
+      // same rows the Calendar page shows — one timed UTC instant and one plain
+      // all-day date, which the server must stamp in the *viewer's* frame.
+
+      // The UTC instant of a wall-clock time on a local day, e.g. ("2026-09-27",
+      // "20:00", "America/Los_Angeles"). Offsets shift with DST, so the fixtures
+      // derive the instant rather than hard-coding an hour.
+      function instantAt(day: string, hhmm: string, timeZone: string) {
+        const wallAt = (ts: number) => {
+          const parts = new Intl.DateTimeFormat("en-US", {
+            timeZone,
+            year: "numeric",
+            month: "2-digit",
+            day: "2-digit",
+            hour: "2-digit",
+            minute: "2-digit",
+            hourCycle: "h23",
+          }).formatToParts(new Date(ts));
+          const p = Object.fromEntries(parts.map((x) => [x.type, x.value]));
+          return Date.parse(`${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}:00Z`);
+        };
+        // Start from the same wall time read as UTC, then step back until the
+        // zone's own reading of the instant lands on it again; two passes settle
+        // every real offset, DST included.
+        const target = Date.parse(`${day}T${hhmm}:00Z`);
+        let ts = target;
+        for (let i = 0; i < 3; i++) {
+          const drift = wallAt(ts) - target;
+          if (!drift) break;
+          ts -= drift;
+        }
+        return new Date(ts).toISOString();
+      }
+
+      async function seedSchedule(db: TestDatabase, timezone: string) {
+        const today = todayStr(timezone);
+        const [conn] = await db.db
+          .insert(s.calendarConnections)
+          .values({ provider: "google", calendarId: "family@group.calendar.google.com", label: "Family", enabled: true })
+          .returning()
+          .all();
+        const [off] = await db.db
+          .insert(s.calendarConnections)
+          .values({ provider: "google", calendarId: "swim@group.calendar.google.com", enabled: false })
+          .returning()
+          .all();
+        await db.db
+          .insert(s.calendarCache)
+          .values([
+            // All-day on the viewer's today (stored as a plain local date).
+            { connectionId: conn.id, eventId: "a1", summary: "Field trip", startAt: `${today}T00:00:00`, endAt: `${today}T00:00:00`, allDay: true },
+            // 20:00 on the viewer's today, stored as the UTC instant Google sent.
+            { connectionId: conn.id, eventId: "t1", summary: "Swim lesson", startAt: instantAt(today, "20:00", timezone), allDay: false },
+            { connectionId: conn.id, eventId: "t2", summary: "Soccer", startAt: instantAt(addDays(today, 2), "09:00", timezone), allDay: false },
+            // Past and beyond the window: never on the dashboard.
+            { connectionId: conn.id, eventId: "old", summary: "Yesterday", startAt: instantAt(addDays(today, -2), "18:00", timezone), allDay: false },
+            { connectionId: conn.id, eventId: "far", summary: "Two weeks out", startAt: instantAt(addDays(today, 14), "18:00", timezone), allDay: false },
+            // A disabled calendar never contributes, same as on the Calendar page.
+            { connectionId: off.id, eventId: "x1", summary: "Hidden swim", startAt: instantAt(today, "20:00", timezone), allDay: false },
+          ])
+          .run();
+        return { today, conn };
+      }
+
+      it("returns the window in the viewer's frame, all-day first, chronologically", async () => {
+        const ZONE = "America/Los_Angeles";
+        const { today } = await seedSchedule(db, ZONE);
+
+        const events = await dashboard.scheduleEvents(db.db, today, 7, ZONE);
+        expect(events.map((e) => e.summary)).toEqual(["Field trip", "Swim lesson", "Soccer"]);
+
+        // The evening event is stamped on the day the viewer is actually on, at
+        // the hour they will turn up — while the stored instant sits on a
+        // different UTC day, which is the frame that used to file it under
+        // tomorrow and read as the wrong clock time.
+        const lesson = events.find((e) => e.summary === "Swim lesson")!;
+        expect(lesson.local_date).toBe(today);
+        expect(lesson.local_time).toBe("20:00");
+        expect(lesson.start_at!.slice(0, 10)).not.toBe(today);
+        expect(lesson.calendar_label).toBe("Family");
+
+        // All-day leads the day, timed events follow by clock time.
+        expect(events[0].all_day).toBe(1);
+        expect(events[1].local_time).toBe("20:00");
+        expect(events.map((e) => e.local_date)).toEqual([today, today, addDays(today, 2)]);
+      });
+
+      it("keeps a full day inside the window for viewers far from UTC", async () => {
+        // Kiritimati is UTC+14: its 00:01 local event is 10:01 UTC the *previous*
+        // day, so a window built from the local date without padding would drop
+        // the very first minute of the day.
+        const ZONE = "Pacific/Kiritimati";
+        const today = todayStr(ZONE);
+        const [conn] = await db.db
+          .insert(s.calendarConnections)
+          .values({ provider: "google", calendarId: "c@group.calendar.google.com", enabled: true })
+          .returning()
+          .all();
+        await db.db
+          .insert(s.calendarCache)
+          .values([{ connectionId: conn.id, eventId: "edge", summary: "Midnight", startAt: instantAt(today, "00:01", ZONE), allDay: false }])
+          .run();
+
+        const events = await dashboard.scheduleEvents(db.db, today, 7, ZONE);
+        expect(events.map((e) => e.summary)).toEqual(["Midnight"]);
+        expect(events[0].local_date).toBe(today);
+        expect(events[0].local_time).toBe("00:01");
+      });
+    });
+
     describe("getDashboard", () => {
       it("aggregates weather(null), birthdays, members, unassigned, and today's meals", async () => {
         const today = todayStr();
@@ -293,6 +404,32 @@ for (const backend of backends) {
         expect(single.children).toHaveLength(1);
         expect(single.children[0].child.id).toBe(me.id);
         expect(single.unassigned).toEqual([]);
+        expect(single.upcomingEvents).toEqual([]);
+      });
+
+      it("carries the household schedule and drops it when the calendar module is off", async () => {
+        const today = todayStr();
+        await seedUser(db, { name: "No Due Date" });
+        const [conn] = await db.db
+          .insert(s.calendarConnections)
+          .values({ provider: "google", calendarId: "family@group.calendar.google.com", label: "Family", enabled: true })
+          .returning()
+          .all();
+        await db.db
+          .insert(s.calendarCache)
+          .values([
+            { connectionId: conn.id, eventId: "e1", summary: "Piano", startAt: `${addDays(today, 1)}T15:00:00Z`, allDay: false },
+          ])
+          .run();
+
+        const on = await dashboard.getDashboard(db.db, { timezone: "UTC" });
+        expect(on.upcomingEvents.map((e) => e.summary)).toEqual(["Piano"]);
+
+        // The schedule belongs to the Calendar module, so disabling that module
+        // empties it instead of leaving stale events on the home view.
+        await db.db.insert(s.modules).values({ name: "calendar", enabled: false }).run();
+        const off = await dashboard.getDashboard(db.db, { timezone: "UTC" });
+        expect(off.upcomingEvents).toEqual([]);
       });
     });
 

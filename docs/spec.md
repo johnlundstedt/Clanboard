@@ -52,6 +52,7 @@ A general-purpose task system, not just simple chore checkboxes:
 ### 5. Dashboard
 - Weather for current day + next 2 days
 - Household member birthdays (upcoming/today)
+- **"Today's schedule"**: today's calendar events (all-day first, then by time, with location) plus a short "coming up" look-ahead over the next few days — a glanceable strip, not a second calendar; the month/week grids stay on the Calendar page
 - **"What needs to be done today"**: per-child task progress (compact, scannable across 9 children) plus a list of unassigned tasks
 - Quick-add text entry for creating a new task by name (see Tasks module)
 - Likely the default "home" view on the wall display, combining glanceable info from other modules

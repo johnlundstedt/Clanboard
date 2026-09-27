@@ -2,9 +2,10 @@ import { and, asc, eq, inArray, isNotNull, isNull, notExists, or, sql } from "dr
 import type { DbClient } from "./db.js";
 import { getSetting, isModuleEnabled, setSetting } from "./db.js";
 import { mealPlan, taskAssignees, taskOccurrences, tasks, users } from "../schema.js";
-import { localDayStr, todayStr } from "../modules/tasks/recurrence.js";
+import { addDays, localDayStr, todayStr } from "../modules/tasks/recurrence.js";
 import { HttpError, badRequest } from "./errors.js";
 import { mapTaskRow, materializeTaskOccurrences } from "./tasks.js";
+import { getEvents } from "./calendar.js";
 
 // WMO weather codes -> [label, emoji] (same mapping the old handler used).
 export const WMO_CODES: Record<number, [string, string]> = {
@@ -403,8 +404,39 @@ export async function childTodayRows(
   return [...byChild.values()];
 }
 
+// Days of household schedule the dashboard carries: today plus the next
+// SCHEDULE_DAYS - 1, which is what the "coming up" strip under today's events
+// shows before it defers to the full Calendar page.
+export const SCHEDULE_DAYS = 7;
+
+// The dashboard's schedule: every enabled calendar's events from `from` (the
+// viewer's today) for `days` days, stamped with the viewer's own day/time and
+// ordered the way a day reads — all-day events first, then by clock time.
+//
+// The SQL window in getEvents runs on the stored start_at, which is a UTC
+// instant for timed events but a plain local date for all-day ones. Reading the
+// local dates as UTC and padding a day on each side covers every viewer offset
+// (UTC-12 … UTC+14), and the local_date filter then trims that padding back off.
+export async function scheduleEvents(db: DbClient, from: string, days = SCHEDULE_DAYS, timezone?: string) {
+  const lastDate = addDays(from, Math.max(days, 1) - 1);
+  const start = new Date(`${addDays(from, -1)}T00:00:00Z`).toISOString();
+  const end = new Date(`${addDays(lastDate, 2)}T00:00:00Z`).toISOString();
+  const events = (await getEvents(db, start, end, timezone)).filter(
+    (e) => e.local_date != null && e.local_date >= from && e.local_date <= lastDate
+  );
+  return events.sort(
+    (a, b) =>
+      (a.local_date! < b.local_date! ? -1 : a.local_date! > b.local_date! ? 1 : 0) ||
+      // All-day leads the day; the rest run by clock time, undated last.
+      (a.all_day === b.all_day ? 0 : a.all_day ? -1 : 1) ||
+      (a.local_time || "").localeCompare(b.local_time || "") ||
+      (a.start_at || "").localeCompare(b.start_at || "")
+  );
+}
+
 // Household dashboard: weather, birthdays, per-member task rows, unassigned
-// tasks, and today's meals. `user_id` narrows to a single member (wall display).
+// tasks, today's meals, and the coming week's schedule. `user_id` narrows to a
+// single member (wall display).
 export async function getDashboard(db: DbClient, opts: { user_id?: string | number; timezone?: string } = {}) {
   const lat = await getSetting(db, "latitude");
   const lon = await getSetting(db, "longitude");
@@ -459,5 +491,17 @@ export async function getDashboard(db: DbClient, opts: { user_id?: string | numb
     for (const row of rows) todayMeals[row.mealSlot] = row.text as string;
   }
 
-  return { date: todayDate, weather, children, upcomingBirthdays, unassigned, todayMeals };
+  // Schedule comes from the Calendar module's cache, so it follows that module's
+  // on/off switch like the meal plan does. Nothing to show is the common case,
+  // so the absent-calendar branch stays silent rather than erroring.
+  let upcomingEvents: Awaited<ReturnType<typeof scheduleEvents>> = [];
+  if (await isModuleEnabled(db, "calendar")) {
+    try {
+      upcomingEvents = await scheduleEvents(db, todayDate, SCHEDULE_DAYS, opts.timezone);
+    } catch (err) {
+      console.error("[dashboard] schedule:", err instanceof Error ? err.message : err);
+    }
+  }
+
+  return { date: todayDate, weather, children, upcomingBirthdays, unassigned, todayMeals, upcomingEvents };
 }
