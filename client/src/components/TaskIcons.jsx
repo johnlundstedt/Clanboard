@@ -1,7 +1,8 @@
 import * as Icons from "lucide-react";
 
-// Lucide has no dedicated lizard icon in the pinned version, so render a
-// matching stroke-style one inline (head + body + curling tail).
+// Lucide ships no lizard, hairbrush, or pile-of-poo icons, so those three are
+// drawn inline to match lucide's stroke style. (Lucide does ship
+// toothbrush-sparkles; that one is imported directly below.)
 export function LizardIcon({ size = 24, ...props }) {
   return (
     <svg
@@ -16,21 +17,18 @@ export function LizardIcon({ size = 24, ...props }) {
       strokeLinejoin="round"
       {...props}
     >
-      <path d="M17.6 5.8a2.7 2.7 0 0 1 2.8 2.7c0 .9-.4 1.6-1 2.1l-.8.7c-.5-.5-.8-1.2-.8-2Z" />
-      <circle cx="19" cy="7.4" r="0.5" fill="currentColor" stroke="none" />
-      <path d="M16.4 9.7c-2.5 1.6-4.9 2.3-7.4 3.4-2 .9-3.6 2.1-4.7 3.8" />
-      <path d="M4.3 16.9c-1.4 1.3-2 3-1.4 4.5" />
-      <path d="M2.9 21.4c1.3.4 2.2-.1 2.7-.7" />
-      <path d="M12.6 11.9 11 10.2" />
-      <path d="M9.2 13.4l-2-.9" />
-      <path d="M14.8 10.6l1.6-1.2" />
-      <path d="M6.6 14.9l-1.9-.2" />
+      <path d="M20.5 8C19 5.7 16.7 5 15 5.4L9 7.6C6.4 8.4 4.5 10 3.7 12.3c-.5 1.4-.3 2.7.8 3.1" />
+      <path d="M20.5 8c.8 1.4.4 2.9-1 3.3l-5.5 1.7c-2.2.8-4 2-5.5 3.6" />
+      <circle cx="18.8" cy="7.6" r="0.6" fill="currentColor" stroke="none" />
+      <path d="M18 11l1.3 1.8" />
+      <path d="M14 12.3l1.1 2.2" />
+      <path d="M10.8 13.6l1 2.2" />
+      <path d="M8 15l.8 2.1" />
     </svg>
   );
 }
 
-// Lucide has no dedicated poop icon in the pinned version, so render a
-// matching stroke-style one inline (pile-of-poo: swirl, humps, drippy end).
+// Pile-of-poo: swirl on top, two humps, rounded underside, drippy end.
 export function PoopIcon({ size = 24, ...props }) {
   return (
     <svg
@@ -54,8 +52,7 @@ export function PoopIcon({ size = 24, ...props }) {
   );
 }
 
-// Lucide has no dedicated hair-brush icon in the pinned version, so render a
-// matching stroke-style one inline (wide bristle pad + handle).
+// Hairbrush: bristles rising out of a rounded paddle, with a small handle stub.
 export function HairBrushIcon({ size = 24, ...props }) {
   return (
     <svg
@@ -70,37 +67,11 @@ export function HairBrushIcon({ size = 24, ...props }) {
       strokeLinejoin="round"
       {...props}
     >
-      <rect x="3" y="6" width="13" height="8" rx="1.5" />
-      <line x1="5.5" y1="7.5" x2="5.5" y2="12.5" />
-      <line x1="8" y1="6.5" x2="8" y2="13.5" />
-      <line x1="10.5" y1="6.5" x2="10.5" y2="13.5" />
-      <line x1="13" y1="7.5" x2="13" y2="12.5" />
-      <path d="M16 8h3.5a2 2 0 0 1 0 4H16Z" />
-    </svg>
-  );
-}
-
-// Lucide has no dedicated toothbrush icon in the pinned version, so render a
-// matching stroke-style one inline (bristles + rounded handle).
-export function ToothbrushIcon({ size = 24, ...props }) {
-  return (
-    <svg
-      xmlns="http://www.w3.org/2000/svg"
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={2}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      {...props}
-    >
-      <rect x="3" y="9" width="10.5" height="6" rx="1" />
-      <line x1="5" y1="10.5" x2="5" y2="13.5" />
-      <line x1="7.5" y1="9.5" x2="7.5" y2="14.5" />
-      <line x1="10" y1="10.5" x2="10" y2="13.5" />
-      <path d="M13.5 10.5h4a2 2 0 0 1 0 3h-4Z" />
+      <path d="M6 15h12v2.8a2.4 2.4 0 0 1-2.4 2.4H8.4A2.4 2.4 0 0 1 6 17.8V15Z" />
+      <line x1="8.5" y1="9" x2="8.5" y2="14.5" />
+      <line x1="11" y1="8.5" x2="11" y2="14.5" />
+      <line x1="13.5" y1="9" x2="13.5" y2="14.5" />
+      <path d="M10.5 20.2h3a1.4 1.4 0 0 1 1.4 1.4 1.4 1.4 0 0 1-1.4 1.4h-3A1.4 1.4 0 0 1 9.1 21.6a1.4 1.4 0 0 1 1.4-1.4Z" />
     </svg>
   );
 }
@@ -157,7 +128,7 @@ export const iconComponents = {
   lock: Icons.Lock,
   "list-checks": Icons.ListChecks,
   // Pet / animal + grooming icons (mirrors icon-catalog.js server rules)
-  "toothbrush-sparkles": ToothbrushIcon,
+  "toothbrush-sparkles": Icons.ToothbrushSparkles,
   "hair-brush": HairBrushIcon,
   lizard: LizardIcon,
   poop: PoopIcon,
