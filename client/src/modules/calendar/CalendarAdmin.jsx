@@ -68,10 +68,14 @@ export default function CalendarAdmin({ onSaved }) {
         <div style={{ display: "grid", gap: "0.4rem" }}>
           {connections.map((c) => (
             <div key={c.id} className="row" style={{ padding: "0.3rem 0" }}>
-              <span className="badge" style={{ background: c.color || "#eef2ff", color: "#1e293b" }}>
+              <span
+                className="badge"
+                title={c.calendar_id}
+                style={{ background: c.color || "#eef2ff", color: "#1e293b" }}
+              >
                 {c.label || c.calendar_id}
               </span>
-              <span className="small muted grow">{c.calendar_id}</span>
+              <span className="grow" />
               <CalendarStatus conn={c} />
               <button onClick={() => { setEditing(c); setShowForm(false); }}>Edit</button>
             </div>
