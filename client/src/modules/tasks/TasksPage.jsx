@@ -445,7 +445,7 @@ function TaskRow({
   const hasMenu = canSkip || canEdit;
 
   return (
-    <div className="card row wrap" style={{ gap: "0.75rem" }}>
+    <div className="card row wrap" style={{ gap: "0.75rem", position: "relative" }}>
       <input
         type="checkbox"
         className="check"
@@ -456,7 +456,7 @@ function TaskRow({
 
       <TaskIcon name={task.icon} size={26} />
 
-      <div className="grow" style={{ minWidth: 180 }}>
+      <div className="grow" style={{ minWidth: 180, ...(hasMenu ? { paddingRight: "2.75rem" } : {}) }}>
         <div className="row wrap" style={{ gap: "0.4rem" }}>
           <strong>{task.name}</strong>
 {task.recurrence_type && (
@@ -505,7 +505,7 @@ function TaskRow({
 
       {/* Row options: skip today's occurrence (repeats only) and edit. */}
       {hasMenu && (
-        <span style={{ position: "relative" }}>
+        <span style={{ position: "absolute", top: "0.5rem", right: "0.5rem" }}>
           <button
             className="icon-btn"
             title="Task options"
