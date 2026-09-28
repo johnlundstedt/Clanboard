@@ -40,7 +40,7 @@ async function pollOnce() {
     cursor = { rev: snap.rev, epoch: snap.epoch };
     const tables = snap.tables;
     if (tables === "*") notifyAll();
-    else for (const t of tables) notify(t);
+    else for (const t of tables) dispatch(t);
   } catch {
     /* offline or not signed in — try again next tick */
   }
