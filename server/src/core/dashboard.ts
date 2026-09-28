@@ -305,7 +305,9 @@ export async function childTodayRows(
   // One household-wide pass: tasks joined to their assignees and to today's (if
   // any) occurrence row, so the whole list is served by a single statement
   // instead of a per-member query. A task with several assignees appears once
-  // per child, exactly like the per-member EXISTS queries it replaces.
+  // per child, exactly like the per-member EXISTS queries it replaces. A day
+  // marked skipped doesn't count as an occurrence for today — that day was
+  // deliberately taken off, so the task must not land on anyone's board.
   const rows = await db
     .select({ task: tasks, occurrence: taskOccurrences, userId: taskAssignees.userId })
     .from(taskAssignees)
@@ -322,7 +324,10 @@ export async function childTodayRows(
             isNull(tasks.completedAt),
             or(isNull(tasks.dueAt), sql`substr(${tasks.dueAt}, 1, 10) <= ${today}`)
           ),
-          sql`${taskOccurrences.id} IS NOT NULL`
+          and(
+            sql`${taskOccurrences.id} IS NOT NULL`,
+            isNull(taskOccurrences.skippedAt)
+          )
         )
       )
     )

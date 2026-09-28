@@ -211,6 +211,17 @@ app.patch("/:id/uncomplete", (c) =>
   })
 );
 
+// "Skip today" for a repeating task: today's occurrence is called off and the
+// row moves to its next day. The same permission as completing it (enforced in
+// core by assertCanComplete), so no extra cap is layered on here.
+app.patch("/:id/skip", (c) =>
+  respond(c, async () => {
+    const out = await core.skipTask(containerDb, c.get("user"), numParam(c, "id"), c.get("timezone"));
+    notifyTasks();
+    return out;
+  })
+);
+
 app.patch("/:id/review", requireCap(containerDb, "tasks", "review"), (c) =>
   respond(c, async () => {
     const out = await core.reviewTask(containerDb, c.get("user"), numParam(c, "id"), c.get("timezone"));

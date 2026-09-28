@@ -43,13 +43,28 @@ export function isOutstanding(task, today) {
   return !due || due <= today;
 }
 
+// "Skip today" is offered for a daily-cadence repeat that is actually on the
+// board for today (its row may already have rolled to tomorrow while an instance
+// for today is still pending, which `isDueToday` covers). Weekly/monthly/yearly
+// patterns are left out on purpose: there "skip today" would really mean "skip
+// this week's", which is a different decision than the one the button names.
+export function isSkippable(task, today) {
+  if (!task.recurrence_type) return false;
+  const daily =
+    task.recurrence_type === "daily" ||
+    task.recurrence_type === "weekdays" ||
+    task.recurrence_type === "weekends" ||
+    (task.recurrence_type === "custom" && (task.recurrence_period || "day") === "day");
+  return daily && isDueToday(task, today);
+}
+
 // Which list section a task belongs to, using the same notion of "today" as the
 // dashboard's "today's tasks" panel — an open task is today's work when it has
 // an instance today, carries no due date at all, or its due date has arrived.
 //   outstanding    - not done, and today's work (overdue only when non-repeating,
 //                    since repeats roll to their next occurrence server-side)
-//   upcoming       - not done and due within the next 7 days (daily repeats are
-//                    excluded; they always read as due today)
+//   upcoming       - not done and due within the next 7 days (a repeat that is
+//                    still on today's board is already filed as outstanding)
 //   completedToday - finished today
 //   rest           - everything else (finished earlier, due further out)
 export function taskBucket(task, today) {
@@ -64,8 +79,10 @@ export function taskBucket(task, today) {
   if (!due || isDueToday(task, today) || (due < today && !task.recurrence_type)) {
     return "outstanding";
   }
-  if (task.recurrence_type !== "daily" && due > today && due <= addDaysStr(today, 7)) {
-    return "upcoming";
-  }
+  // A repeat is normally on today's board (an instance for today), which the
+  // branch above already filed as outstanding. The ones that reach here are the
+  // days a skip took off, so a daily task can legitimately sit in "upcoming"
+  // until its next turn.
+  if (due > today && due <= addDaysStr(today, 7)) return "upcoming";
   return "rest";
 }

@@ -541,6 +541,10 @@ input:focus, select:focus, textarea:focus {
 /* Item-options menu: slate of target lists can grow tall, so cap + scroll it */
 .item-menu { max-height: 60vh; overflow-y: auto; min-width: 180px; }
 
+/* Task row options (⋮): skip today / edit task. Same popover as the list menus,
+   just sized for the two short labels. */
+.task-menu { min-width: 150px; }
+
 /* Installed desktop PWA: content expands into the OS title-bar area (Window
    Controls Overlay). The shell is pushed down by the strip's height so its own
    nav never hides under the window controls, and a slim fixed strip hosts app

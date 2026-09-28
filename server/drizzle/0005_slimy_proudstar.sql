@@ -1,0 +1,1 @@
+ALTER TABLE `task_occurrences` ADD `skipped_at` text;

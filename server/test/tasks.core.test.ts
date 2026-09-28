@@ -739,6 +739,129 @@ for (const backend of backends) {
       expect(assigneesOf(hist, done.id).map((a) => a.id)).toContain(bob.id);
     });
 
+    it("skips today's occurrence of a daily repeat and takes the day off the board", async () => {
+      const admin = await seedUser(db, { name: "Admin", is_admin: true });
+      const bob = await seedUser(db, { name: "Bob" });
+      const user = snakeUser(admin);
+      const today = todayStr();
+      const task = await core.createTask(db.db, user, {
+        name: "Feed pets",
+        recurrence_type: "daily",
+        recurrence_interval: 1,
+        recurrence_start_date: today,
+        assigned_ids: [bob.id],
+      });
+
+      // Tick it off first, so the skip has to undo today's completion rather
+      // than merely move an untouched task forward.
+      await core.completeTask(db.db, user, task.id);
+      const skipped = await core.skipTask(db.db, user, task.id);
+      expect(skipped.skipped).toBe(today);
+      expect(skipped.due_at).toBe(addDays(today, 1));
+
+      // The row is back on tomorrow's date and not completed: today's list no
+      // longer nags, tomorrow's instance is fresh.
+      const [after] = await db.db.select().from(s.tasks).where(eq(s.tasks.id, task.id)).all();
+      expect(after.dueAt).toBe(addDays(today, 1));
+      expect(after.completedAt).toBeNull();
+      expect(after.reviewedAt).toBeNull();
+
+      // Today leaves the board: the day is recorded as skipped rather than left
+      // pending, so the repeat is no longer "due today" — including after the
+      // next materializer pass, which must not resurrect a taken-off day.
+      const hist = await core.taskOccurrenceHistory(db.db, today);
+      const row = hist.rows.find((r) => r.task_id === task.id)!;
+      expect(row).toBeDefined();
+      expect(row.completed_at).toBeNull();
+      expect(row.skipped_at).toBeTruthy();
+      await core.materializeTaskOccurrences(db.db, {});
+      const afterPass = await core.listTasks(db.db, user, {});
+      const reWire = afterPass.find((t) => t.id === task.id)!;
+      expect(reWire.due_today).toBeFalsy();
+      expect(reWire.completed_at).toBeNull();
+
+      // The list reflects the skip: not outstanding today, and the repeat files
+      // itself under "upcoming" until its next turn instead of vanishing.
+      const listed = await core.listTasks(db.db, user, {});
+      const wire = listed.find((t) => t.id === task.id)!;
+      expect(wire.due_at?.slice(0, 10)).toBe(addDays(today, 1));
+      expect(wire.due_today).toBeFalsy();
+      expect(isOutstanding(wire, wire.today)).toBe(false);
+      expect(taskBucket(wire, wire.today)).toBe("upcoming");
+
+      // The dashboard's per-child "today's tasks" leaves it out too.
+      const board = await dashboard.childTodayRows(db.db, [bob.id]);
+      expect(board[0].todays.map((t) => t.id)).not.toContain(task.id);
+
+      // A second skip has nothing left to take off, so it is refused rather than
+      // quietly eating tomorrow's day too.
+      await expect(core.skipTask(db.db, user, task.id)).rejects.toThrow(/today/i);
+      const [still] = await db.db.select().from(s.tasks).where(eq(s.tasks.id, task.id)).all();
+      expect(still.dueAt).toBe(addDays(today, 1));
+    });
+
+    it("refuses to skip a non-repeating task, and stops at the end of a schedule", async () => {
+      const admin = await seedUser(db, { name: "Admin", is_admin: true });
+      const user = snakeUser(admin);
+      const today = todayStr();
+      const once = await core.createTask(db.db, user, { name: "Mow lawn", due_at: today });
+      await expect(core.skipTask(db.db, user, once.id)).rejects.toThrow(/repeating task/i);
+
+      // A weekly repeat is refused too: skipping one day there would really mean
+      // skipping the week, which isn't what the action says.
+      const monday = (() => {
+        const d = new Date(`${today}T12:00:00`);
+        d.setDate(d.getDate() + ((8 - d.getDay()) % 7 || 7));
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      })();
+      const weekly = await core.createTask(db.db, user, {
+        name: "Bins",
+        recurrence_type: "custom",
+        recurrence_period: "week",
+        recurrence_interval: 1,
+        recurrence_days_of_week: ["MO"],
+        recurrence_start_date: monday,
+        due_at: today,
+      });
+      await expect(core.skipTask(db.db, user, weekly.id)).rejects.toThrow(/daily/i);
+
+      // A repeat whose schedule has no day left after today: skipping the final
+      // occurrence clears the row instead of inventing a date past the end.
+      const ending = await core.createTask(db.db, user, {
+        name: "Last water",
+        recurrence_type: "daily",
+        recurrence_interval: 1,
+        recurrence_start_date: today,
+        recurrence_end_date: today,
+      });
+      const out = await core.skipTask(db.db, user, ending.id);
+      expect(out.due_at).toBeNull();
+      const [row] = await db.db.select().from(s.tasks).where(eq(s.tasks.id, ending.id)).all();
+      expect(row.dueAt).toBeNull();
+      expect(row.completedAt).toBeNull();
+    });
+
+    it("skips a weekday repeat onto the next weekday", async () => {
+      const admin = await seedUser(db, { name: "Admin", is_admin: true });
+      const user = snakeUser(admin);
+      const today = todayStr();
+      const task = await core.createTask(db.db, user, {
+        name: "School run",
+        recurrence_type: "weekdays",
+        recurrence_interval: 1,
+        recurrence_start_date: today,
+        due_at: today,
+      });
+      const out = await core.skipTask(db.db, user, task.id);
+      expect(out.skipped).toBe(today);
+      expect(out.due_at).not.toBeNull();
+      // The next occurrence is a weekday strictly after today, whatever today is.
+      const next = new Date(`${out.due_at}T12:00:00`);
+      expect(next.getDay()).toBeGreaterThan(0);
+      expect(next.getDay()).toBeLessThan(6);
+      expect(out.due_at! > today).toBe(true);
+    });
+
     it("list respects view_others and member scoping", async () => {
       const admin = await seedUser(db, { name: "Admin", is_admin: true });
       // Alice gets a role that grants the tasks module but NOT view_others.

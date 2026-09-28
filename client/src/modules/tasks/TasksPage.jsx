@@ -1,15 +1,15 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Users } from "lucide-react";
+import { Users, MoreVertical } from "lucide-react";
 import Avatar from "../../components/Avatar.jsx";
 import { TaskIcon } from "../../components/IconPicker.jsx";
 import TaskForm from "./TaskForm.jsx";
 import {
   getTasks, getMembers, createTask, updateTask, deleteTask,
-  completeTask, uncompleteTask, reviewTask, unreviewTask,
+  completeTask, uncompleteTask, skipTask, reviewTask, unreviewTask,
   getTaskSettings, getTaskCategories,
 } from "../../api.js";
 import { usePolling } from "../../realtime.js";
-import { isFullyDone, isOutstanding, taskBucket, todayStr } from "./taskUtils.js";
+import { isFullyDone, isOutstanding, isSkippable, taskBucket, todayStr } from "./taskUtils.js";
 
 // Whole-day difference `later` – `earlier` for YYYY-MM-DD strings.
 function daysBetween(later, earlier) {
@@ -38,6 +38,9 @@ export default function TasksPage({ user, memberId, member, taskTarget, onTaskTa
   const [categories, setCategories] = useState([]);
   const [settings, setSettings] = useState({});
   const [viewMode, setViewMode] = useState(taskTarget?.mode || "today"); // 'today' | 'upcoming' | 'all'
+  // Task id whose options menu (⋮) is open, or null. One at a time, so a second
+  // tap anywhere else just moves the menu.
+  const [menuFor, setMenuFor] = useState(null);
 
   // The target is one-shot: consume it so the next plain "Tasks" nav starts at
   // the member's own default view instead of replaying the last dashboard tap.
@@ -95,8 +98,9 @@ export default function TasksPage({ user, memberId, member, taskTarget, onTaskTa
   //   1. Today's Outstanding — not done, and today's work: an instance today, a
   //      due date today, no due date at all, or (non-repeating only) overdue.
   //      Overdue tasks render with an "Overdue X days" badge.
-  //   2. Upcoming — not done and due within the next 7 days; daily repeats are
-  //      excluded (they live in "today").
+  //   2. Upcoming — not done and due within the next 7 days. A repeat still on
+  //      today's board is already in "today", so what lands here is a repeat
+  //      whose day was skipped.
   //   3. Today's Completed — anything finished sometime today (its instance or
   //      completed_at date matches today's local date).
   //   4. All Other — the remainder (completed earlier, due further out, etc.).
@@ -162,6 +166,21 @@ export default function TasksPage({ user, memberId, member, taskTarget, onTaskTa
     if (task.reviewed_at) await unreviewTask(task.id);
     else await reviewTask(task.id);
     refresh();
+  }
+
+  // Call off today's occurrence of a repeat: the task leaves today's list and
+  // comes back on its next scheduled day. The checkbox is the reverse move
+  // (unchecking), so this lives in the row's ⋮ menu rather than on the row.
+  async function handleSkip(task) {
+    setMenuFor(null);
+    await skipTask(task.id);
+    refresh();
+  }
+
+  function startEdit(task) {
+    setMenuFor(null);
+    setEditing(task);
+    setShowingForm(false);
   }
 
   async function handleDelete(task) {
@@ -331,9 +350,13 @@ export default function TasksPage({ user, memberId, member, taskTarget, onTaskTa
                   showAssignees={showAssignees}
                   canEdit={canEdit}
                   canReview={canReview}
+                  menuOpen={menuFor === t.id}
                   onToggleComplete={toggleComplete}
                   onToggleReview={toggleReview}
-                  onEdit={() => { setEditing(t); setShowingForm(false); }}
+                  onSkip={handleSkip}
+                  onEdit={startEdit}
+                  onMenuToggle={() => setMenuFor(menuFor === t.id ? null : t.id)}
+                  onMenuClose={() => setMenuFor(null)}
                 />
               ))}
               {sections[key].length === 0 && (
@@ -403,7 +426,10 @@ function dueLabel(task) {
   return label;
 }
 
-function TaskRow({ task, user, memberById, adult, today, showAssignees, canEdit, canReview, onToggleComplete, onToggleReview, onEdit }) {
+function TaskRow({
+  task, user, memberById, adult, today, showAssignees, canEdit, canReview,
+  menuOpen, onToggleComplete, onToggleReview, onSkip, onEdit, onMenuToggle, onMenuClose,
+}) {
   const dueDate = task.due_at ? task.due_at.slice(0, 10) : null;
   const overdue = !!dueDate && dueDate < today && !task.completed_at;
   const daysOverdue = overdue ? daysBetween(today, dueDate) : 0;
@@ -413,6 +439,10 @@ function TaskRow({ task, user, memberById, adult, today, showAssignees, canEdit,
   const caps = user?.caps?.tasks || {};
   // Completing is allowed with either complete_own or complete_others (mirrors server assertCanComplete).
   const canComplete = adult || user?.is_kiosk || caps.complete_own || caps.complete_others;
+  // The menu's actions: skipping rides the same permission as ticking the box
+  // off, editing keeps its own `edit` cap.
+  const canSkip = canComplete && isSkippable(task, today);
+  const hasMenu = canSkip || canEdit;
 
   return (
     <div className="card row wrap" style={{ gap: "0.75rem" }}>
@@ -473,7 +503,42 @@ function TaskRow({ task, user, memberById, adult, today, showAssignees, canEdit,
         <button className="small" onClick={() => onToggleReview(task)}>Unreview</button>
       )}
 
-      {canEdit && <button className="small" onClick={onEdit}>Edit</button>}
+      {/* Row options: skip today's occurrence (repeats only) and edit. */}
+      {hasMenu && (
+        <span style={{ position: "relative" }}>
+          <button
+            className="icon-btn"
+            title="Task options"
+            aria-label={`Options for ${task.name}`}
+            aria-haspopup="menu"
+            aria-expanded={menuOpen}
+            onClick={onMenuToggle}
+          >
+            <MoreVertical size={20} />
+          </button>
+          {menuOpen && (
+            <>
+              <div style={{ position: "fixed", inset: 0, zIndex: 40 }} onClick={onMenuClose} />
+              <div className="card list-menu task-menu" role="menu">
+                {canSkip && (
+                  <button
+                    type="button"
+                    onClick={() => onSkip(task)}
+                    title="Not today — this occurrence moves to the next scheduled day"
+                  >
+                    Skip today
+                  </button>
+                )}
+                {canEdit && (
+                  <button type="button" onClick={() => onEdit(task)}>
+                    Edit task
+                  </button>
+                )}
+              </div>
+            </>
+          )}
+        </span>
+      )}
     </div>
   );
 }

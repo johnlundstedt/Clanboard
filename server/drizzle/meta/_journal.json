@@ -36,6 +36,13 @@
       "when": 1789695907803,
       "tag": "0004_daffy_rockslide",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1790557382522,
+      "tag": "0005_slimy_proudstar",
+      "breakpoints": true
     }
   ]
 }

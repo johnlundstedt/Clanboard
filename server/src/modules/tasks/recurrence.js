@@ -255,6 +255,21 @@ export function nextOccurrence(task, afterDate) {
   return null;
 }
 
+// True when a task's repeats turn over day by day: every day (daily), every
+// weekday/weekend, or a custom repeat measured in days. These are the patterns
+// where "skip today" is unambiguous — the day being taken off is exactly one
+// day of the schedule, and the next one is tomorrow or the next scheduled day.
+// Week/month/year patterns are excluded on purpose: skipping today there would
+// really mean skipping the week it lands in, which is a different decision than
+// the one the action names. Expects the snake_case wire shape (see
+// recurrenceTask in core/tasks.ts), like the other helpers here.
+export function isDailyCadence(task) {
+  if (!task || !task.recurrence_type) return false;
+  if (task.recurrence_type === "daily") return true;
+  if (task.recurrence_type === "weekdays" || task.recurrence_type === "weekends") return true;
+  return task.recurrence_type === "custom" && (task.recurrence_period || "day") === "day";
+}
+
 // True when `dateStr` (the next occurrence) falls inside the task's start/end window.
 export function withinRange(task, dateStr) {
   if (task.recurrence_start_date && dateStr < task.recurrence_start_date) return false;

@@ -1,6 +1,7 @@
 // Per-instance audit table for repeating tasks: one row per scheduled
 // occurrence, materialized ahead of time (completed_at NULL = scheduled but
-// not done yet). Keeps both completed and skipped days for later review.
+// not done yet). Keeps completed days, missed days, and days deliberately
+// skipped ("skip today", skipped_at set) for later review.
 //
 // Lives outside modules/tasks/index.js so the test harness can apply the
 // exact same migration without pulling in the ws/realtime module graph.
@@ -12,7 +13,8 @@ export async function ensureTaskOccurrencesTable(db) {
       occurrence_date TEXT NOT NULL,
       completed_at TEXT,          -- NULL = scheduled / not completed
       completed_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
-      reviewed_at TEXT
+      reviewed_at TEXT,
+      skipped_at TEXT             -- non-NULL = the day was skipped on purpose
     );
     CREATE UNIQUE INDEX IF NOT EXISTS idx_task_occurrences_task_date
       ON task_occurrences(task_id, occurrence_date);
@@ -23,7 +25,8 @@ export async function ensureTaskOccurrencesTable(db) {
   // ALTER a column to drop NOT NULL. Rebuild the table in place, guarded by
   // the PRAGMA check so it runs exactly once (deploy-safe on D1 and sqlite).
   const occColsRes = await db.prepare(`PRAGMA table_info("task_occurrences")`).all();
-  const occInfo = (Array.isArray(occColsRes) ? occColsRes : occColsRes.results ?? []);
+  const occInfo = Array.isArray(occColsRes) ? occColsRes : occColsRes.results ?? [];
+  const has = (name) => occInfo.some((c) => c.name === name);
   const completedCol = occInfo.find((c) => c.name === "completed_at");
   if (completedCol && Number(completedCol.notnull) === 1) {
     await db.exec(`
@@ -33,16 +36,19 @@ export async function ensureTaskOccurrencesTable(db) {
         occurrence_date TEXT NOT NULL,
         completed_at TEXT,
         completed_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
-        reviewed_at TEXT
+        reviewed_at TEXT,
+        skipped_at TEXT
       );
       INSERT INTO task_occurrences_rebuild
-        (id, task_id, occurrence_date, completed_at, completed_by, reviewed_at)
-        SELECT id, task_id, occurrence_date, completed_at, completed_by, reviewed_at
+        (id, task_id, occurrence_date, completed_at, completed_by, reviewed_at, skipped_at)
+        SELECT id, task_id, occurrence_date, completed_at, completed_by, reviewed_at, skipped_at
         FROM task_occurrences;
       DROP TABLE task_occurrences;
       ALTER TABLE task_occurrences_rebuild RENAME TO task_occurrences;
       CREATE UNIQUE INDEX idx_task_occurrences_task_date
         ON task_occurrences(task_id, occurrence_date);
     `);
+  } else if (!has("skipped_at")) {
+    await db.exec("ALTER TABLE task_occurrences ADD COLUMN skipped_at TEXT");
   }
 }

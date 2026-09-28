@@ -7,6 +7,7 @@ import { hasCap, canAssign, type LoggedInUser } from "./caps.js";
 import { autoAssignIcon } from "../modules/tasks/icon-catalog.js";
 import {
   addDays,
+  isDailyCadence,
   localDayStr,
   nextOccurrence,
   occurrenceIndex,
@@ -273,12 +274,18 @@ export async function annotateTodayOccurrences(
       taskId: taskOccurrences.taskId,
       completedAt: taskOccurrences.completedAt,
       reviewedAt: taskOccurrences.reviewedAt,
+      skippedAt: taskOccurrences.skippedAt,
     })
     .from(taskOccurrences)
     .where(eq(taskOccurrences.occurrenceDate, today))
     .all();
   const byTask = new Map<number, { completedAt: string | null; reviewedAt: string | null }>();
-  for (const o of occs) byTask.set(o.taskId, { completedAt: o.completedAt, reviewedAt: o.reviewedAt });
+  for (const o of occs) {
+    // A skipped day is not on the board: it must not read as due today, and its
+    // (empty) completion must not blank out the repeat's rolling marker either.
+    if (o.skippedAt) continue;
+    byTask.set(o.taskId, { completedAt: o.completedAt, reviewedAt: o.reviewedAt });
+  }
 
   for (const t of tasksOut) {
     const o = byTask.get(t.id);
@@ -515,6 +522,10 @@ export async function taskOccurrenceHistory(db: DbClient, date?: string, timezon
       completed_by: r.occ.completedBy,
       reviewed_at: r.occ.reviewedAt,
       reviewed_day: localDayStr(r.occ.reviewedAt, timezone),
+      // A day the family took off on purpose. Consumers can render it apart from
+      // a missed day instead of reporting it as not done.
+      skipped_at: r.occ.skippedAt,
+      skipped_day: localDayStr(r.occ.skippedAt, timezone),
     })),
   };
 }
@@ -754,7 +765,8 @@ export async function completeTask(db: DbClient, user: LoggedInUser, id: number,
       .run();
     await db
       .update(taskOccurrences)
-      .set({ completedAt: sql`datetime('now')`, completedBy: user.id })
+      // A real completion overrides a previous "skip today" on the same day.
+      .set({ completedAt: sql`datetime('now')`, completedBy: user.id, skippedAt: null })
       .where(and(eq(taskOccurrences.taskId, id), eq(taskOccurrences.occurrenceDate, occDate)))
       .run();
     await db
@@ -781,6 +793,81 @@ export async function uncompleteTask(db: DbClient, user: LoggedInUser, id: numbe
     .where(and(eq(taskOccurrences.taskId, id), eq(taskOccurrences.occurrenceDate, occDate)))
     .run();
   return { ok: true } as const;
+}
+
+// "Skip today": today's occurrence of a repeating task is called off, so the
+// family stops seeing it today and the task picks up again on its next
+// scheduled day. Same permission as completing it (a member can skip their own
+// chore, not someone else's).
+//
+// The day is MARKED skipped, not deleted and not left merely pending. Both
+// alternatives are wrong here: an instance row for today is exactly what makes a
+// repeat read as "due today" (annotateTodayOccurrences), so a pending row would
+// keep nagging today, and the materializer re-inserts any missing date on the
+// next read, so deleting it would silently come back. The marker is also what
+// keeps the day off the occurrence history: nobody should be nagged tomorrow
+// about the one day they deliberately took off. Missed days stay untouched and
+// remain auditable.
+export async function skipTask(db: DbClient, user: LoggedInUser, id: number, timezone?: string) {
+  const task = await getTaskOr404(db, id);
+  await assertCanComplete(db, user, task);
+  const rec = recurrenceTask(task);
+  if (!isDailyCadence(rec)) {
+    throw badRequest(
+      task.recurrenceType
+        ? "Only a daily repeating task can be skipped."
+        : "Only a repeating task can be skipped."
+    );
+  }
+
+  // Which day "today" is for this task, and whether it is still on the board.
+  // A skipped instance no longer counts, so a second tap is refused instead of
+  // quietly rolling the task another day. A repeat with no instance of its own
+  // (a legacy dateless row) resolves through the rolling `due_at`, which is the
+  // day the list is showing; anything else simply isn't scheduled today and must
+  // not have a day taken off it.
+  const today = todayStr(timezone);
+  const todays = await db
+    .select({ skippedAt: taskOccurrences.skippedAt })
+    .from(taskOccurrences)
+    .where(and(eq(taskOccurrences.taskId, id), eq(taskOccurrences.occurrenceDate, today)))
+    .get();
+  if (todays?.skippedAt) throw badRequest("Today's already been skipped.");
+  const occDate = todays ? today : task.dueAt ? task.dueAt.slice(0, 10) : today;
+  if (occDate !== today) throw badRequest("That task isn't scheduled for today.");
+  await db
+    .insert(taskOccurrences)
+    .values({ taskId: id, occurrenceDate: occDate, completedAt: null })
+    .onConflictDoNothing()
+    .run();
+  await db
+    .update(taskOccurrences)
+    .set({
+      completedAt: null,
+      completedBy: null,
+      reviewedAt: null,
+      skippedAt: sql`datetime('now')`,
+    })
+    .where(and(eq(taskOccurrences.taskId, id), eq(taskOccurrences.occurrenceDate, occDate)))
+    .run();
+
+  // Advance the rolling row to the next scheduled day, honouring the same end
+  // date / occurrence-count limits the background roll does. No next day (a
+  // schedule that has run out) clears the row's due date, which is the honest
+  // end state for "this repeat is over".
+  const next = nextOccurrence(rec, occDate);
+  const reached =
+    next !== null &&
+    task.recurrenceCount !== null &&
+    task.recurrenceCount > 0 &&
+    (occurrenceIndex(rec, next) || 0) > task.recurrenceCount;
+  const nextDueAt = next && withinRange(rec, next) && !reached ? next : null;
+  await db
+    .update(tasks)
+    .set({ dueAt: nextDueAt, completedAt: null, reviewedAt: null })
+    .where(eq(tasks.id, id))
+    .run();
+  return { ok: true, due_at: nextDueAt, skipped: occDate } as const;
 }
 
 export async function reviewTask(db: DbClient, user: LoggedInUser, id: number, timezone?: string) {

@@ -170,6 +170,11 @@ export const taskOccurrences = sqliteTable(
       onDelete: "set null",
     }),
     reviewedAt: text("reviewed_at"),
+    // A day the family deliberately took off ("skip today"). Kept as its own
+    // marker rather than reusing completed_at: a skipped day is NOT done, it
+    // simply isn't scheduled any more, and an instance marked here must not make
+    // the repeat read as due today.
+    skippedAt: text("skipped_at"),
   },
   (t) => [uniqueIndex("idx_task_occurrences_task_date").on(t.taskId, t.occurrenceDate)]
 );

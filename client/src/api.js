@@ -56,6 +56,7 @@ export const quickAddTask = (name, assignedIds) =>
   });
 export const completeTask = (id) => req(`/tasks/${id}/complete`, { method: "PATCH" });
 export const uncompleteTask = (id) => req(`/tasks/${id}/uncomplete`, { method: "PATCH" });
+export const skipTask = (id) => req(`/tasks/${id}/skip`, { method: "PATCH" });
 export const reviewTask = (id) => req(`/tasks/${id}/review`, { method: "PATCH" });
 export const unreviewTask = (id) => req(`/tasks/${id}/unreview`, { method: "PATCH" });
 export const assignTask = (id, userIds) =>
