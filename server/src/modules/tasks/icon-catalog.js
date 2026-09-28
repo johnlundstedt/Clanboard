@@ -11,6 +11,10 @@ const RULES = [
   [/\b(birds?|parrots?|chickens?|roosters?|hens?)\b/, "bird"],
   // Small-furry pets (guinea pigs, hamsters, gerbils) get the rat icon
   [/\b(guinea pigs?|rats?|hamsters?|gerbils?)\b/, "rat"],
+  // Reptiles keep the dog/pet rule below from stealing "feed the bearded dragon"
+  [/\b(bearded dragons?|lizards?|reptiles?|geckos?|iguanas?|chameleons?|snakes?)\b/, "lizard"],
+  // Dog-waste tasks land on the poop icon before the generic dog/pet rule
+  [/\b(dog (?:poop|poo|waste)|poop|poo scoop|pick up poo|pet waste)\b/, "poop"],
   [/\b(dish|dishes|dishwasher|laundry|wash|clothes|fold)\b/, "shirt"],
   [/\b(clean|vacuum|sweep|mop|wipe|dust|tidy|organi[sz]e|organi[sz]ation)\b/, "sparkles"],
   [/\b(vacuum)\b/, "vacuum"],
@@ -19,7 +23,7 @@ const RULES = [
   [/\b(cook|dinner|lunch|breakfast)\b/, "cooking-pot"],
   [/\b(shopping|grocery|shop|buy|errand|store)\b/, "shopping-cart"],
   [/\b(toothbrush|brush teeth|brush your teeth|teeth|toothpaste|dental|floss|mouthwash)\b/, "toothbrush-sparkles"],
-  [/\b(brush hair|comb hair)\b/, "mirror-round"],
+  [/\b(brush hair|comb hair)\b/, "hair-brush"],
   [/\b(bath|bathroom|brush|teeth|shower|hair|haircut)\b/, "shower-head"],
   [/\b(school|homework|study|read|book|library|project)\b/, "book-open"],
   [/\b(music|piano|guitar|violin|practice)\b/, "music"],
@@ -76,6 +80,9 @@ const PRESET_ICONS = {
   phone: "phone",
   "layout-grid": "layout-grid",
   "toothbrush-sparkles": "toothbrush-sparkles",
+  "hair-brush": "hair-brush",
+  lizard: "lizard",
+  poop: "poop",
   rabbit: "rabbit",
   cat: "cat",
   turtle: "turtle",

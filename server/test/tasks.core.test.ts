@@ -932,8 +932,8 @@ describe("autoAssignIcon keywords", () => {
   it("maps grooming keywords to the toothbrush and mirror icons", () => {
     expect(autoAssignIcon("Brush teeth")).toBe("toothbrush-sparkles");
     expect(autoAssignIcon("brush your teeth")).toBe("toothbrush-sparkles");
-    expect(autoAssignIcon("Brush hair")).toBe("mirror-round");
-    expect(autoAssignIcon("comb hair")).toBe("mirror-round");
+    expect(autoAssignIcon("Brush hair")).toBe("hair-brush");
+    expect(autoAssignIcon("comb hair")).toBe("hair-brush");
     // The generic shower/scrub keywords still keep their shower icon
     expect(autoAssignIcon("Brush the floor")).toBe("shower-head");
   });
@@ -949,6 +949,11 @@ describe("autoAssignIcon keywords", () => {
     expect(autoAssignIcon("Clean the hamster cage")).toBe("rat");
     expect(autoAssignIcon("Catch the rat")).toBe("rat");
     expect(autoAssignIcon("Walk the dog")).toBe("paw-print");
+    expect(autoAssignIcon("Feed the bearded dragon")).toBe("lizard");
+    expect(autoAssignIcon("Clean the gecko tank")).toBe("lizard");
+    // Dog-waste tasks land on the poop icon before the generic dog rule
+    expect(autoAssignIcon("Pick up dog poop")).toBe("poop");
+    expect(autoAssignIcon("Dog waste bin")).toBe("poop");
   });
 
   it("keeps existing keyword behaviour", () => {
