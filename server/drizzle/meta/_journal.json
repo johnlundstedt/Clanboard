@@ -43,6 +43,13 @@
       "when": 1790557382522,
       "tag": "0005_slimy_proudstar",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1790822636877,
+      "tag": "0006_aspiring_blacklash",
+      "breakpoints": true
     }
   ]
 }

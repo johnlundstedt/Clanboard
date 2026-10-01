@@ -465,13 +465,13 @@ function TaskRow({
           {repeatDays(task) ? ` · ${repeatDays(task)}` : ""}
         </span>
       )}
-          {task.category_name && <span className="badge" style={{ background: "#f0fdf4", color: "#166534" }}>{task.category_name}</span>}
+          {task.category_name && <span className="badge" style={{ background: "var(--badge-green-bg)", color: "var(--badge-green-fg)" }}>{task.category_name}</span>}
           {task.requires_adult_review && (
             fullyDone
               ? <span className="badge green">reviewed ✓</span>
               : awaitingReview
-                ? <span className="badge amber">awaiting adult review</span>
-                : <span className="badge">needs adult review</span>
+                ? <span className="badge amber">awaiting review</span>
+                : <span className="badge">needs review</span>
           )}
           {overdue && (
             <span className="badge red">

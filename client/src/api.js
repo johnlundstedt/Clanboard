@@ -136,6 +136,14 @@ export const setMemberModule = (id, module, enabled) =>
 export const uploadPhoto = (data, name) =>
   req("/admin/photos", { method: "POST", body: JSON.stringify({ data, name }) });
 
+// --- Own profile (header avatar menu) -----------------------------------------
+// Self-service, so any signed-in member can use it — not just admins. The server
+// accepts only `theme` and `photo_url` from this body.
+export const updateOwnProfile = (fields) =>
+  req("/auth/profile", { method: "PATCH", body: JSON.stringify(fields) });
+export const uploadMyPhoto = (data) =>
+  req("/auth/profile/photo", { method: "POST", body: JSON.stringify({ data }) });
+
 // --- Task config (categories) ------------------------------------------------
 export const getTaskSettings = () => req("/tasks/settings");
 export const getTaskCategories = () => req("/tasks/categories");

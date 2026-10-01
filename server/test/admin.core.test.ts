@@ -49,7 +49,7 @@ for (const backend of backends) {
       it("seeds the four default roles with the role matrix, once", async () => {
         await admin.seedDefaultRoles(db.db);
         const roles = await db.db.select().from(s.membersRoles).orderBy(s.membersRoles.id).all();
-        expect(roles.map((r) => r.name)).toEqual(["Parents", "Older Kids", "Younger Kids", "Kiosk"]);
+        expect(roles.map((r) => r.name)).toEqual(["Parent", "Older Kids", "Younger Kids", "Kiosk"]);
 
         const parents = await admin.getRole(db.db, roles[0].id);
         const parentsFull = parents && (await admin.roleWithGrants(db.db, parents));
@@ -66,6 +66,41 @@ for (const backend of backends) {
         await admin.seedDefaultRoles(db.db);
         const again = await db.db.select().from(s.membersRoles).all();
         expect(again).toHaveLength(4);
+      });
+    });
+
+    describe("renameRole", () => {
+      it("renames in place, keeping the id, its grants and its members", async () => {
+        await admin.seedDefaultRoles(db.db);
+        const roles = await db.db.select().from(s.membersRoles).orderBy(s.membersRoles.id).all();
+        const parentId = roles[0].id;
+        await admin.createMember(db.db, { name: "Johanna", role_id: parentId });
+
+        await admin.renameRole(db.db, "Parents", "Parent");
+
+        const renamed = await db.db.select().from(s.membersRoles).all();
+        expect(renamed.map((r) => r.name)).toEqual(["Parent", "Older Kids", "Younger Kids", "Kiosk"]);
+        // Same row: members and role_modules rows key off the id
+        expect(renamed[0].id).toBe(parentId);
+        const member = await db.db.select().from(s.users).all();
+        expect(member.find((u) => u.name === "Johanna")?.roleId).toBe(parentId);
+        const grants = await admin.listRoleGrants(db.db, parentId);
+        expect(grants.find((g) => g.name === "tasks")?.caps.review).toBe(true);
+
+        // Idempotent, and never clobbers a role that already holds the name
+        await admin.renameRole(db.db, "Parents", "Parent");
+        await admin.renameRole(db.db, "Older Kids", "Parent");
+        expect((await db.db.select().from(s.membersRoles).all()).map((r) => r.name)).toEqual([
+          "Parent",
+          "Older Kids",
+          "Younger Kids",
+          "Kiosk",
+        ]);
+      });
+
+      it("does nothing when the old role was never there", async () => {
+        await admin.renameRole(db.db, "Parents", "Parent");
+        expect(await db.db.select().from(s.membersRoles).all()).toEqual([]);
       });
     });
 
@@ -229,6 +264,33 @@ for (const backend of backends) {
         await expect(admin.updateMember(db.db, 9999, {})).rejects.toMatchObject({
           status: 404,
         });
+      });
+
+      it("theme defaults to system, round-trips, and rejects junk", async () => {
+        const member = (await admin.createMember(db.db, { name: "Themed" }))!;
+        expect(member.theme).toBe("system");
+
+        for (const theme of ["light", "dark"] as const) {
+          const updated = await admin.updateMember(db.db, member.id, { theme });
+          expect(updated?.theme).toBe(theme);
+        }
+
+        // An unknown value falls back rather than storing something the client
+        // can't render, and omitting theme on a later save keeps the current one.
+        const bad = await admin.updateMember(db.db, member.id, { theme: "neon" });
+        expect(bad?.theme).toBe("system");
+        await admin.updateMember(db.db, member.id, { theme: "dark" });
+        const untouched = await admin.updateMember(db.db, member.id, { name: "Renamed" });
+        expect(untouched?.theme).toBe("dark");
+
+        // A wall display carries a theme too — that's the whole point of it.
+        const kiosk = (await admin.createMember(db.db, {
+          name: "kiosk",
+          is_kiosk: true,
+          theme: "dark",
+        }))!;
+        expect(kiosk.is_kiosk).toBe(true);
+        expect(kiosk.theme).toBe("dark");
       });
 
       it("listMembers returns public users in id order", async () => {

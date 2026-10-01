@@ -115,9 +115,23 @@ export default function KioskShell({ user, onLogout }) {
     return list;
   }, [visible]);
 
-  function selectMember(id) {
+  // Whether a target — a member, or the whole family — can open a module.
+  function canShow(name, m) {
+    const mod = modules.find((x) => x.name === name);
+    if (!mod || mod.name === "admin") return false;
+    if (m) return new Set(m.enabled_modules || []).has(name) && (!mod.adminOnly || !!m.is_admin);
+    return globalEnabled.has(name);
+  }
+
+  // Selecting someone normally lands on their first available module, which is
+  // their dashboard. Tapping an avatar while already inside a module keeps that
+  // module and just retargets it — browsing the Tasks module as one kid and
+  // tapping the next stays in Tasks instead of bouncing back to the dashboard —
+  // falling back to the default only when they can't open the current module.
+  function selectMember(id, { keepModule = false } = {}) {
     setSelectedId(id);
     const m = id ? members.find((x) => x.id === id) : null;
+    if (keepModule && canShow(active, m)) return;
     const names = new Set(m?.enabled_modules || []);
     const defaultFor = modules.find(
       (mod) => names.has(mod.name) && (!mod.adminOnly || m?.is_admin)
@@ -168,7 +182,7 @@ export default function KioskShell({ user, onLogout }) {
         <aside className="kiosk-side">
           <button
             className={`kiosk-family ${!selected ? "active" : ""}`}
-            onClick={() => selectMember(null)}
+            onClick={() => selectMember(null, { keepModule: true })}
             title="Show the whole clan"
           >
             <span className="avatar kiosk-avatar">
@@ -181,7 +195,7 @@ export default function KioskShell({ user, onLogout }) {
             <button
               key={m.id}
               className={`kiosk-member ${selectedId === m.id ? "active" : ""}`}
-              onClick={() => selectMember(m.id)}
+              onClick={() => selectMember(m.id, { keepModule: true })}
               title={m.name}
             >
               <span className="avatar-wrap">

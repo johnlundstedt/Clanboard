@@ -51,6 +51,7 @@ function snakeUserRow(u: typeof s.users.$inferSelect): auth.AuthUserRow {
     gender: u.gender,
     role_id: u.roleId,
     nav_scope: u.navScope,
+    theme: u.theme,
     is_admin: u.isAdmin,
     is_kiosk: u.isKiosk,
     system_account: u.systemAccount,
@@ -150,6 +151,7 @@ for (const backend of backends) {
         gender: null,
         role_id: null,
         nav_scope: "all",
+        theme: "system",
         is_admin: false,
         is_kiosk: false,
         system_account: false,
@@ -160,6 +162,8 @@ for (const backend of backends) {
         must_change_password: false,
       });
       expect(JSON.stringify(row)).not.toContain("irrelevant");
+      // A row without the theme column (or with a junk value) still renders.
+      expect(auth.publicUser({ id: 1, name: "X", theme: "neon" })?.theme).toBe("system");
       expect(auth.publicUser(null)).toBeNull();
     });
 
@@ -228,6 +232,57 @@ for (const backend of backends) {
         snakeUserRow(noRole)
       );
       expect(noRoleEnabled.sort()).toEqual(["dashboard", "lists", "meal-plan", "tasks"]);
+    });
+
+    describe("updateOwnProfile", () => {
+      it("updates theme and photo, and ignores everything else", async () => {
+        const member = await seedUser(db, { name: "Self" });
+
+        const dark = await auth.updateOwnProfile(db.db, member.id, {
+          theme: "dark",
+          photo_url: "/uploads/self.jpg",
+        });
+        expect(dark?.theme).toBe("dark");
+        expect(dark?.photo_url).toBe("/uploads/self.jpg");
+
+        // A member editing their own account must not be able to reach the
+        // admin-managed fields, whatever the request body claims.
+        await db.db.insert(s.membersRoles).values({ name: "Parent" }).run();
+        const parent = (await db.db.select().from(s.membersRoles).all())[0];
+        await auth.updateOwnProfile(db.db, member.id, {
+          theme: "light",
+          is_admin: true,
+          role_id: parent.id,
+          is_kiosk: true,
+          system_account: true,
+          nav_scope: "own",
+          name: "Hacked",
+          login_enabled: true,
+        } as never);
+
+        const row = (await db.db.select().from(s.users).all())[0];
+        expect(row.theme).toBe("light");
+        expect(row.isAdmin).toBe(false);
+        expect(row.roleId).toBeNull();
+        expect(row.isKiosk).toBe(false);
+        expect(row.systemAccount).toBe(false);
+        expect(row.navScope).toBe("all");
+        expect(row.name).toBe("Self");
+        expect(row.loginEnabled).toBe(false);
+
+        // Removing the photo: an empty string clears it rather than storing "".
+        const cleared = await auth.updateOwnProfile(db.db, member.id, { photo_url: "" });
+        expect(cleared?.photo_url).toBeNull();
+
+        // Omitting a field leaves the current value alone.
+        await auth.updateOwnProfile(db.db, member.id, { theme: "dark" });
+        const kept = await auth.updateOwnProfile(db.db, member.id, {});
+        expect(kept?.theme).toBe("dark");
+
+        await expect(auth.updateOwnProfile(db.db, 9999, { theme: "dark" })).rejects.toMatchObject({
+          status: 404,
+        });
+      });
     });
 
     it("password hashing roundtrips", async () => {
