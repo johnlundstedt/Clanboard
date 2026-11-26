@@ -18,7 +18,11 @@ compatibility_flags = ["nodejs_compat"]
 
 [assets]
 directory = "../client/dist"
+binding = "ASSETS"
 not_found_handling = "single-page-application"
+# "/" goes through the Worker so signed-out visitors get the marketing
+# homepage (client/public/home.html) instead of the app shell.
+run_worker_first = ["/"]
 
 [[d1_databases]]
 binding = "CLANBOARD"

@@ -1,0 +1,390 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Clanboard – Family Calendar, Chore Chart, Shopping Lists &amp; Meal Planner</title>
+<meta name="description" content="Organize your family on the devices you already own. Shared calendar, chores, shopping lists and meal plans on your phone, laptop or a wall tablet. $5/month. 30-day free trial, no credit card required.">
+<link rel="canonical" href="https://www.clanboard.app/">
+<meta name="theme-color" content="#2563eb">
+<link rel="icon" type="image/png" href="/clan_board_logo_192x192.png">
+<link rel="apple-touch-icon" href="/clan_board_logo_192x192.png">
+
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Clanboard">
+<meta property="og:url" content="https://www.clanboard.app/">
+<meta property="og:title" content="Clanboard – One board to run the whole clan">
+<meta property="og:description" content="Family calendar, chores, shopping lists and meal plans on the screens you already own. 30-day free trial, no credit card required.">
+<meta property="og:image" content="https://www.clanboard.app/clan_board_logo_512x512.png">
+<meta name="twitter:card" content="summary">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Organization",
+      "name": "Clanboard",
+      "url": "https://www.clanboard.app/",
+      "logo": "https://www.clanboard.app/clan_board_logo_512x512.png"
+    },
+    {
+      "@type": "SoftwareApplication",
+      "name": "Clanboard",
+      "url": "https://www.clanboard.app/",
+      "applicationCategory": "LifestyleApplication",
+      "operatingSystem": "Web, iOS, Android, Windows, macOS",
+      "description": "Family organizer with a shared calendar, chores, shopping lists and meal planning that runs on phones, tablets and computers.",
+      "offers": [
+        { "@type": "Offer", "name": "Monthly", "price": "5.00", "priceCurrency": "USD" },
+        { "@type": "Offer", "name": "Yearly", "price": "50.00", "priceCurrency": "USD" }
+      ]
+    },
+    {
+      "@type": "FAQPage",
+      "mainEntity": [
+        { "@type": "Question", "name": "Do I need to buy special hardware?", "acceptedAnswer": { "@type": "Answer", "text": "No. Clanboard runs in a web browser, so you can use any modern phone, tablet or computer. A second-hand tablet works well as a wall display." } },
+        { "@type": "Question", "name": "Is there a free trial?", "acceptedAnswer": { "@type": "Answer", "text": "Yes. Every new clan gets 30 days free with full access to every feature. No credit card is required to start." } },
+        { "@type": "Question", "name": "Does Clanboard work with Google Calendar?", "acceptedAnswer": { "@type": "Answer", "text": "Yes. Connect one or more Google Calendars and their events appear on your family calendar. Google Calendar events are shown read-only for now." } },
+        { "@type": "Question", "name": "Do I need to download an app?", "acceptedAnswer": { "@type": "Answer", "text": "No app store needed. Open clanboard.app in your browser and add it to your home screen. It opens full screen, just like an app." } },
+        { "@type": "Question", "name": "How many family members can I add?", "acceptedAnswer": { "@type": "Answer", "text": "Your subscription covers your whole household on all of your devices." } },
+        { "@type": "Question", "name": "Can kids use it?", "acceptedAnswer": { "@type": "Answer", "text": "Yes. Kids can see their chores for the day and check them off themselves. Little ones who can't read yet can tap a chore to hear it read aloud." } },
+        { "@type": "Question", "name": "How much does Clanboard cost?", "acceptedAnswer": { "@type": "Answer", "text": "After your 30-day free trial, Clanboard is $5 per month or $50 per year for your whole family." } }
+      ]
+    }
+  ]
+}
+</script>
+
+<style>
+:root{--navy:#173b68;--blue:#2563eb;--wm-blue:#3b82f6;--ink:#1f2430;--muted:#4b5563;--bg:#f4f6f8;--line:#e2e8f0;--sky:#d6e2f2;--edge:#3d6496}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:Inter,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;line-height:1.5}
+h1,h2,h3{font-family:"Bricolage Grotesque",system-ui,sans-serif;text-wrap:balance;margin:0}
+p{margin:0;text-wrap:pretty}
+a{color:var(--navy)}
+img{display:block}
+.wrap{max-width:1200px;margin:0 auto;padding:0 32px}
+.btn{display:inline-block;text-decoration:none;font-weight:600;border-radius:12px;padding:16px 26px;font-size:17px}
+.btn-primary{background:var(--blue);color:#fff}.btn-primary:hover{background:#1d4ed8}
+.btn-ghost{color:var(--navy);border:1.5px solid #c5d0de;border-radius:10px;padding:12px 16px;font-size:15px}
+.btn-sm{padding:13px 18px;font-size:15px;border-radius:10px}
+.eyebrow{font-size:13px;font-weight:600;letter-spacing:.08em;text-transform:uppercase}
+.h2{font-size:48px;line-height:1.05;font-weight:800;color:var(--navy)}
+.lead{font-size:18px;color:var(--muted)}
+section{scroll-margin-top:20px}
+
+/* header */
+.site-header{background:#fff;border-bottom:1px solid var(--line)}
+.nav{display:flex;align-items:center;gap:32px;flex-wrap:wrap;padding-top:18px;padding-bottom:18px}
+.brand{display:flex;align-items:center;gap:10px;text-decoration:none;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-weight:800;font-size:26px;letter-spacing:-.01em}
+.brand .c{color:var(--navy)}.brand .b{color:var(--wm-blue)}
+.navlinks{display:flex;gap:28px;font-size:15px;font-weight:500}
+.navlinks a{color:var(--ink);text-decoration:none}.navlinks a:hover{color:var(--blue)}
+.nav-cta{margin-left:auto;display:flex;align-items:center;gap:12px}
+
+/* hero */
+.hero{padding:72px 0 96px}
+.hero .wrap{display:flex;flex-wrap:wrap;gap:56px;align-items:center}
+.hero-copy{flex:1 1 440px;min-width:0;display:flex;flex-direction:column;gap:24px}
+.hero-copy .eyebrow{color:var(--blue);font-size:14px}
+.hero h1{font-size:64px;line-height:1.02;font-weight:800;color:var(--navy)}
+.hero-sub{font-size:19px;color:var(--muted)}
+.hero-ctas{display:flex;flex-wrap:wrap;gap:12px;align-items:center}
+.hero-ctas .more{font-weight:600;font-size:17px;padding:16px 8px;text-decoration:none}
+.fine{font-size:14px;color:var(--muted)}
+.hero-art{flex:1 1 520px;min-width:0;display:flex;justify-content:center}
+.tablet{margin:0;width:100%;max-width:600px;background:#0f1513;border-radius:28px;padding:16px;box-shadow:0 30px 60px rgba(23,59,104,.25)}
+.screen{background:#fbfbf9;border-radius:16px;padding:20px;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(220px,100%),1fr));gap:14px}
+.screen-top{grid-column:1/-1;display:flex;justify-content:space-between;align-items:baseline}
+.screen-top b{font-family:"Bricolage Grotesque",sans-serif;font-weight:800;font-size:22px}
+.screen-top span{font-size:14px;color:var(--muted)}
+.tile{border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:8px;font-size:14px}
+.tile strong{font-size:13px;text-transform:uppercase;letter-spacing:.06em}
+.t-blue{background:#e6f1fc}.t-blue strong{color:#0a63b8}
+.t-green{background:#e5f6ea}.t-green strong{color:#17803a}
+.t-amber{background:#fef3dc}.t-amber strong{color:#8a5300}
+.t-purple{background:#f1ebfa}.t-purple strong{color:#5b2ea6}
+.countdowns{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:10px}
+.countdowns span{font-size:14px;background:var(--navy);color:#fff;border-radius:999px;padding:6px 12px}
+
+/* strip */
+.strip{background:#fff;border-bottom:1px solid var(--line);border-top:1px solid var(--line)}
+.strip .wrap{padding-top:40px;padding-bottom:40px;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(240px,100%),1fr));gap:32px}
+.strip h3{font-family:inherit;font-size:17px;font-weight:600}
+.strip p{font-size:15px;color:var(--muted);margin-top:6px}
+
+/* features */
+.features{padding:112px 0}
+.sec-head{max-width:720px;display:flex;flex-direction:column;gap:16px;margin-bottom:56px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(340px,100%),1fr));gap:24px}
+.card{background:#fff;border:1px solid var(--line);border-radius:18px;padding:28px;display:flex;flex-direction:column;gap:12px}
+.card h3{font-size:22px;font-weight:600}
+.card p{font-size:16px;color:var(--muted)}
+.ico{width:48px;height:48px;border-radius:12px;display:flex;align-items:center;justify-content:center}
+.ico svg{width:24px;height:24px;fill:none;stroke:#fff;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+
+/* devices */
+.devices{background:var(--navy);color:#f4f6f8;padding:104px 0}
+.devices .h2{color:#f4f6f8}
+.devices .lead{color:var(--sky)}
+.devices .grid{grid-template-columns:repeat(auto-fit,minmax(min(300px,100%),1fr))}
+.dev{border:1.5px solid var(--edge);border-radius:18px;padding:28px;display:flex;flex-direction:column;gap:10px}
+.dev .eyebrow{color:#9cc8ff}
+.dev h3{font-size:24px;font-weight:600}
+.dev p{font-size:16px;color:var(--sky)}
+
+/* how */
+.how{padding:112px 0}
+.steps{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(300px,100%),1fr));gap:32px}
+.steps li{display:flex;flex-direction:column;gap:12px}
+.steps .n{font-family:"Bricolage Grotesque",sans-serif;font-weight:800;font-size:56px;line-height:1;color:var(--blue)}
+.steps h3{font-size:22px;font-weight:600}
+.steps p{font-size:16px;color:var(--muted)}
+
+/* pricing */
+.pricing{background:#fff;border-top:1px solid var(--line);border-bottom:1px solid var(--line);padding:104px 0}
+.pricing .wrap{display:flex;flex-wrap:wrap;gap:48px;align-items:center}
+.pricing .sec-head{flex:1 1 420px;min-width:0;margin:0}
+.plan{flex:1 1 380px;min-width:0;background:var(--bg);border:2px solid var(--navy);border-radius:22px;padding:36px;display:flex;flex-direction:column;gap:20px}
+.plan .eyebrow{color:var(--navy)}
+.price{display:flex;align-items:baseline;gap:8px}
+.price b{font-family:"Bricolage Grotesque",sans-serif;font-weight:800;font-size:64px;line-height:1}
+.price span{font-size:17px;color:var(--muted)}
+.plan ul{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:8px;font-size:16px}
+.plan .btn{text-align:center;background:var(--navy);color:#fff}
+.plan .fine{text-align:center}
+
+/* faq */
+.faq{padding:112px 0}
+.faq .wrap{max-width:860px}
+.faq .h2{margin-bottom:32px}
+.qs{border-top:1px solid #d5dce5}
+details{border-bottom:1px solid #d5dce5;padding:22px 0}
+summary{cursor:pointer;list-style:none;font-size:19px;font-weight:600;display:flex;justify-content:space-between;gap:16px}
+summary::-webkit-details-marker{display:none}
+summary::after{content:"+";color:var(--navy);font-size:22px;line-height:1}
+details[open] summary::after{content:"\2212"}
+details p{font-size:16px;line-height:1.6;color:var(--muted);padding-top:12px}
+
+/* cta */
+.cta{padding:0 32px 112px}
+.cta-box{max-width:1136px;margin:0 auto;background:var(--navy);border-radius:28px;padding:72px 40px;display:flex;flex-direction:column;align-items:center;gap:20px;text-align:center;color:#f4f6f8}
+.cta-box img{background:#fff;border-radius:18px;padding:8px}
+.cta-box .h2{color:#f4f6f8;max-width:720px}
+.cta-box p{font-size:18px;color:var(--sky)}
+.cta-box .btn{background:#fff;color:var(--navy)}
+
+/* footer */
+.site-footer{border-top:1px solid var(--line)}
+.site-footer .wrap{padding-top:40px;padding-bottom:40px;display:flex;flex-wrap:wrap;gap:24px;align-items:center;justify-content:space-between;font-size:14px;color:var(--muted)}
+.site-footer .copy{display:flex;align-items:center;gap:10px}
+.site-footer nav{display:flex;flex-wrap:wrap;gap:24px}
+
+@media (max-width:820px){
+  .navlinks{display:none}
+  .wrap{padding:0 20px}
+  .hero{padding:48px 0 64px}
+  .hero h1{font-size:44px}
+  .h2{font-size:36px}
+  .features,.how,.faq{padding:72px 0}
+  .devices,.pricing{padding:72px 0}
+  .cta{padding:0 20px 72px}
+  .cta-box{padding:56px 24px}
+}
+@media (max-width:420px){
+  .brand{font-size:22px}.brand img{width:36px;height:36px}
+  .nav-cta .btn-sm{padding:12px 14px}
+}
+</style>
+</head>
+<body>
+
+<header class="site-header">
+  <nav class="wrap nav" aria-label="Main">
+    <a class="brand" href="/" aria-label="Clanboard home">
+      <img src="/clan_board_logo_192x192.png" alt="" width="44" height="44">
+      <span><span class="c">Clan</span><span class="b">board</span></span>
+    </a>
+    <div class="navlinks">
+      <a href="#features">Features</a>
+      <a href="#how">How it works</a>
+      <a href="#pricing">Pricing</a>
+      <a href="#faq">FAQ</a>
+    </div>
+    <div class="nav-cta">
+      <a class="btn btn-ghost" href="/login">Log in</a>
+      <a class="btn btn-primary btn-sm" href="/signup">Start free trial</a>
+    </div>
+  </nav>
+</header>
+
+<main>
+  <section class="hero" id="top">
+    <div class="wrap">
+      <div class="hero-copy">
+        <p class="eyebrow">The family organizer for the screens you already own</p>
+        <h1>One board to run the whole clan.</h1>
+        <p class="hero-sub">Clanboard puts your family calendar, chores, shopping lists and meal plan in one place. Hang an old tablet on the wall, check it from any phone, plan the week from your laptop. No expensive smart display to buy.</p>
+        <div class="hero-ctas">
+          <a class="btn btn-primary" href="/signup">Start your 30-day free trial</a>
+          <a class="more" href="#how">See how it works →</a>
+        </div>
+        <p class="fine">No credit card required · Works on phones, tablets and computers</p>
+      </div>
+      <div class="hero-art">
+        <figure class="tablet" role="img" aria-label="Clanboard wall display showing today's calendar, chores, dinner plan, shopping list and birthday countdowns">
+          <div class="screen" aria-hidden="true">
+            <div class="screen-top"><b>Tuesday, March 10</b><span>54° Partly cloudy</span></div>
+            <div class="tile t-blue"><strong>Today</strong><span><b>7:30</b> School drop-off</span><span><b>4:00</b> Ava · Soccer practice</span><span><b>6:30</b> Family dinner</span></div>
+            <div class="tile t-green"><strong>Chores</strong><span>✓ Leo · Feed the dog</span><span>○ Ava · Empty dishwasher</span><span>○ Dad · Take out recycling</span></div>
+            <div class="tile t-amber"><strong>Dinner this week</strong><span>Tue · Chicken tacos</span><span>Wed · Leftovers</span><span>Thu · Pasta bake</span></div>
+            <div class="tile t-purple"><strong>Groceries</strong><span>Tortillas · Avocados</span><span>Milk · Penne · Mozzarella</span><span style="color:#4b5563">+ 6 more</span></div>
+            <div class="countdowns"><span>Leo's birthday · 5 days</span><span>Easter · 26 days</span></div>
+          </div>
+        </figure>
+      </div>
+    </div>
+  </section>
+
+  <section class="strip" aria-label="Why Clanboard">
+    <div class="wrap">
+      <div><h3>Bring your own device</h3><p>A second-hand tablet makes a great wall display. No proprietary hardware.</p></div>
+      <div><h3>No big upfront cost</h3><p>$5 a month instead of a pricey dedicated screen.</p></div>
+      <div><h3>Nothing to install</h3><p>Open clanboard.app and add it to your home screen. It works like an app.</p></div>
+      <div><h3>Everyone stays in sync</h3><p>Check off a chore on your phone and the wall display updates instantly.</p></div>
+    </div>
+  </section>
+
+  <section class="features" id="features">
+    <div class="wrap">
+      <div class="sec-head">
+        <h2 class="h2">Everything your family juggles, on one screen.</h2>
+        <p class="lead">Stop chasing plans across group texts, sticky notes and three different apps. Clanboard gives every family member the same view of the week.</p>
+      </div>
+      <div class="grid">
+        <article class="card">
+          <div class="ico" style="background:#0a7be0"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 9h18M7 3v4M17 3v4M5 5h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z"/></svg></div>
+          <h3>Shared family calendar</h3>
+          <p>See everyone’s week at a glance. Connect your Google Calendars and they appear on every screen automatically.</p>
+        </article>
+        <article class="card">
+          <div class="ico" style="background:#1f9d47"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 11l3 3 8-8M20 12v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9"/></svg></div>
+          <h3>Chores that read themselves aloud</h3>
+          <p>Assign repeating chores to each family member. Kids who can’t read yet just tap a chore and Clanboard reads it out loud.</p>
+        </article>
+        <article class="card">
+          <div class="ico" style="background:#7b45c9"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6h15l-1.5 9h-12zM6 6L5 3H2M9 20a1 1 0 1 0 0-2 1 1 0 0 0 0 2zM18 20a1 1 0 1 0 0-2 1 1 0 0 0 0 2z"/></svg></div>
+          <h3>Shopping lists with shopping mode</h3>
+          <p>One grocery list the whole family adds to. At the store, shopping mode goes full screen and keeps your phone awake, so you’re not unlocking it every aisle.</p>
+        </article>
+        <article class="card">
+          <div class="ico" style="background:#e08a00"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3v8a2 2 0 0 0 2 2v8M11 3v8M3 3v8a2 2 0 0 0 2 2M17 3c-2 0-3 3-3 6s1 4 3 4v8"/></svg></div>
+          <h3>Meal planning</h3>
+          <p>Plan the week’s dinners in a few minutes and end the daily “what’s for dinner?” debate.</p>
+        </article>
+        <article class="card">
+          <div class="ico" style="background:#173b68"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16v12H4zM8 20h8M12 16v4"/></svg></div>
+          <h3>Wall display mode</h3>
+          <p>A clean, always-on dashboard with today’s plans, the weather and live updates from every device, designed to be read from across the room.</p>
+        </article>
+        <article class="card">
+          <div class="ico" style="background:#d9475a"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12v9H4v-9M2 7h20v5H2zM12 21V7M12 7H8a2.5 2.5 0 0 1 0-5c3 0 4 5 4 5zM12 7h4a2.5 2.5 0 0 0 0-5c-3 0-4 5-4 5z"/></svg></div>
+          <h3>Birthday and holiday countdowns</h3>
+          <p>The dashboard counts down to upcoming birthdays and holidays, so nothing sneaks up on you and nobody gets forgotten.</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section class="devices" aria-labelledby="devices-h">
+    <div class="wrap">
+      <div class="sec-head">
+        <h2 class="h2" id="devices-h">On the wall, in your pocket, at your desk.</h2>
+        <p class="lead">Clanboard is a progressive web app, so the same account works everywhere. Each screen is laid out for how you use it.</p>
+      </div>
+      <div class="grid">
+        <div class="dev"><span class="eyebrow">Wall display</span><h3>The family command center</h3><p>Mount any tablet in the kitchen or hallway. A full-screen, always-on view of today, chores and dinner. Kids tap to hear a chore read aloud and check it off themselves.</p></div>
+        <div class="dev"><span class="eyebrow">Phone</span><h3>The list that’s with you at the store</h3><p>Add to the grocery list the moment you run out, see who’s picking up whom, and switch to shopping mode in the store: full screen, and your screen stays on.</p></div>
+        <div class="dev"><span class="eyebrow">Laptop</span><h3>Sunday planning, made easy</h3><p>Lay out the week’s meals, assign chores and manage family members on a big screen.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="how" id="how">
+    <div class="wrap">
+      <div class="sec-head"><h2 class="h2">Up and running in an evening.</h2></div>
+      <ol class="steps">
+        <li><span class="n">1</span><h3>Create your clan</h3><p>Sign up in a minute and start your 30-day free trial. No credit card needed.</p></li>
+        <li><span class="n">2</span><h3>Add your family and calendars</h3><p>Invite family members, set your home location for weather, and connect your Google Calendars.</p></li>
+        <li><span class="n">3</span><h3>Put a tablet on the wall</h3><p>Open Clanboard on any tablet, add it to the home screen, and mount it where the family gathers.</p></li>
+      </ol>
+    </div>
+  </section>
+
+  <section class="pricing" id="pricing">
+    <div class="wrap">
+      <div class="sec-head">
+        <h2 class="h2">Simple pricing for the whole family.</h2>
+        <p class="lead">One subscription covers your entire clan and every device you own. Try everything free for 30 days.</p>
+      </div>
+      <div class="plan">
+        <span class="eyebrow">Clanboard Family</span>
+        <div>
+          <div class="price"><b>$5</b><span>/ month</span></div>
+          <p style="margin-top:6px">or <strong>$50 / year</strong>, two months free</p>
+        </div>
+        <ul>
+          <li>Unlimited family members</li>
+          <li>Unlimited devices, including wall displays</li>
+          <li>Calendar, chores, lists and meal planning</li>
+          <li>Read-aloud chores and shopping mode</li>
+          <li>Google Calendar connection</li>
+        </ul>
+        <a class="btn" href="/signup">Start your 30-day free trial</a>
+        <p class="fine">No credit card required. Cancel anytime.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="faq" id="faq">
+    <div class="wrap">
+      <h2 class="h2">Questions families ask</h2>
+      <div class="qs">
+        <details open><summary>Do I need to buy special hardware?</summary><p>No. Clanboard runs in a web browser, so you can use any modern phone, tablet or computer. A second-hand tablet works well as a wall display.</p></details>
+        <details><summary>Is there a free trial?</summary><p>Yes. Every new clan gets 30 days free with full access to every feature. No credit card is required to start.</p></details>
+        <details><summary>Does Clanboard work with Google Calendar?</summary><p>Yes. Connect one or more Google Calendars and their events appear on your family calendar. Google Calendar events are shown read-only for now.</p></details>
+        <details><summary>Do I need to download an app?</summary><p>No app store needed. Open clanboard.app in your browser and add it to your home screen. It opens full screen, just like an app.</p></details>
+        <details><summary>How many family members can I add?</summary><p>Your subscription covers your whole household on all of your devices.</p></details>
+        <details><summary>Can kids use it?</summary><p>Yes. Kids can see their chores for the day and check them off themselves. Little ones who can’t read yet can tap a chore to hear it read aloud.</p></details>
+        <details><summary>How much does Clanboard cost?</summary><p>After your 30-day free trial, Clanboard is $5 per month or $50 per year for your whole family.</p></details>
+      </div>
+    </div>
+  </section>
+
+  <section class="cta" aria-labelledby="cta-h">
+    <div class="cta-box">
+      <img src="/clan_board_logo_192x192.png" alt="" width="72" height="72">
+      <h2 class="h2" id="cta-h">Get the whole clan on the same page.</h2>
+      <p>Free for 30 days. No credit card required.</p>
+      <a class="btn" href="/signup">Start your free trial</a>
+    </div>
+  </section>
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <span class="copy"><img src="/clan_board_logo_192x192.png" alt="" width="28" height="28">© 2026 Clanboard · clanboard.app</span>
+    <nav aria-label="Footer">
+      <a href="#features">Features</a><a href="#pricing">Pricing</a><a href="#faq">FAQ</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a><a href="/login">Log in</a>
+    </nav>
+  </div>
+</footer>
+
+</body>
+</html>

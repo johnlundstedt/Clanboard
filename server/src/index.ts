@@ -13,6 +13,7 @@ import { initEmailConfig } from "./core/email.js";
 import { initCalendarConfig } from "./core/calendar.js";
 import { createFsStorage } from "./core/storage-fs.js";
 import { createSecurity } from "./web/helpers.js";
+import { hasValidSession } from "./web/landing.js";
 import { initSecurity } from "./web/security.js";
 import { initStorage, storage } from "./web/storage.js";
 import { registerModule, initModules, mountModules, startModuleJobs, listModulesStatus } from "./modules/registry.js";
@@ -123,6 +124,20 @@ app.get("/uploads/*", async (c) => {
 
 // Serve the built client in production
 const publicDir = path.join(__dirname, "..", "public");
+
+// Marketing homepage: signed-out visitors to "/" get home.html; signed-in
+// users fall through to the app shell (same rule as the Worker).
+let homeContent = "";
+try {
+  homeContent = fs.readFileSync(path.join(publicDir, "home.html"), "utf8");
+} catch {
+  // No home.html in the build: "/" just serves the app as before.
+}
+app.get("/", async (c, next) => {
+  if (!homeContent || (await hasValidSession(c.req.header("Cookie"), secret))) return next();
+  return c.html(homeContent, 200);
+});
+
 app.use("/*", serveStatic({ root: publicDir }));
 
 // SPA fallback: any unmapped path returns the app shell.
