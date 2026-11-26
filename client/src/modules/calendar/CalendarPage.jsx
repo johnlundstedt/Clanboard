@@ -124,7 +124,7 @@ export default function CalendarPage() {
       .sort((a, b) => a.start_at.localeCompare(b.start_at));
 
   const renderEvent = (e) => (
-    <div key={e.id} className="cal-evt" style={{ borderLeft: `4px solid ${e.color || "#3b82f6"}` }}>
+    <div key={e.id} className="cal-evt" style={{ borderLeft: `4px solid ${e.color || "var(--accent)"}` }}>
       {!e.all_day && e.start_at && <span className="small">{eventTime(e)} </span>}
       {e.summary}
     </div>
@@ -201,7 +201,7 @@ export default function CalendarPage() {
                 minHeight: 70,
                 opacity: inMonth ? 1 : 0.4,
                 borderColor: isToday ? "var(--accent)" : undefined,
-                background: isToday ? "#f0f7ff" : undefined,
+                background: isToday ? "var(--accent-soft)" : undefined,
               }}>
                 <div style={{ fontWeight: 700, marginBottom: "0.25rem" }}>
                   {d.getDate()}
@@ -232,7 +232,7 @@ export default function CalendarPage() {
                 </div>
                 {dayEvents.map((e) => (
                   <div key={e.id} className="cal-sched-evt">
-                    <span className="dot" style={{ background: e.color || "#3b82f6" }} />
+                    <span className="dot" style={{ background: e.color || "var(--accent)" }} />
                     <span className="time">{e.all_day ? "All-day" : eventTime(e)}</span>
                     <span className="grow">
                       {e.summary}

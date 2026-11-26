@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
-import { User, Lock, LogOut } from "lucide-react";
+import { User, Lock, LogOut, Settings } from "lucide-react";
 import modules, { getClientModule } from "./modules/index.js";
 import { getMe, login, logout, forgotPassword, setPassword, getTasks } from "./api.js";
 import { ensureRealtime, usePolling } from "./realtime.js";
+import { applyTheme } from "./theme.js";
 import { isOutstanding, todayStr } from "./modules/tasks/taskUtils.js";
 import { updateAppBadge } from "./pwa.js";
 import KioskShell from "./KioskShell.jsx";
@@ -10,6 +11,7 @@ import TitleBar from "./TitleBar.jsx";
 import Logo from "./components/Logo.jsx";
 import Avatar from "./components/Avatar.jsx";
 import PasswordInput from "./components/PasswordInput.jsx";
+import ProfilePage from "./modules/profile/ProfilePage.jsx";
 
 export default function App() {
   const [user, setUser] = useState(null);
@@ -21,6 +23,12 @@ export default function App() {
   // that task's editor. Cleared once the Tasks page has consumed it so a later
   // direct "Tasks" nav falls back to the logged-in user's default view.
   const [taskTarget, setTaskTarget] = useState(null); // { memberId?, taskId?, mode } | null
+  // Header avatar menu, and the member's own settings (photo + theme) opened
+  // from it. Settings is a destination rather than a nav module: it has no icon
+  // in the module bar and no server-side module entry, since nothing about it is
+  // admin-configurable.
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [view, setView] = useState(null); // null | "profile"
 
   const tasksEnabled = !!user && !user.is_kiosk && (user.enabled_modules || []).includes("tasks");
 
@@ -75,6 +83,18 @@ export default function App() {
     };
   }, []);
 
+  // Escape closes the avatar menu, like the item pickers elsewhere. Listening
+  // on the window (rather than on the menu) means it works without the menu
+  // holding focus.
+  useEffect(() => {
+    if (!menuOpen) return;
+    function onKey(e) {
+      if (e.key === "Escape") setMenuOpen(false);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [menuOpen]);
+
   const loadSession = useCallback(async () => {
     try {
       const me = await getMe();
@@ -95,6 +115,15 @@ export default function App() {
     loadSession();
     ensureRealtime();
   }, [loadSession]);
+
+  // The member's theme follows their account, so it applies to every shell —
+  // including the kiosk's — as soon as the session is known. On sign-out the
+  // cleanup restores the remembered theme so the login screen isn't left dark
+  // by whoever used the device last.
+  useEffect(() => {
+    if (!user) return;
+    return applyTheme(user.theme);
+  }, [user?.theme, !!user]);
 
   if (loading) return <div className="login-wrap"><div className="card">Loading…</div></div>;
 
@@ -152,15 +181,56 @@ export default function App() {
           ))}
         </div>
         <span className="nav-actions">
-          <Avatar user={user} className="nav-avatar" />
-          <button className="navlink" title="Log out" onClick={async () => { await logout(); setUser(null); }}>
-            <LogOut size={32} />
-          </button>
+          <span className="nav-user">
+            <button
+              className="nav-avatar-btn"
+              aria-haspopup="menu"
+              aria-expanded={menuOpen}
+              aria-label={`${user.name} — account menu`}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => setMenuOpen((open) => !open)}
+            >
+              <Avatar user={user} />
+            </button>
+            {menuOpen && (
+              <>
+                <div
+                  style={{ position: "fixed", inset: 0, zIndex: 40 }}
+                  onClick={() => setMenuOpen(false)}
+                />
+                <div className="card list-menu profile-menu" role="menu">
+                  <button
+                    type="button"
+                    onClick={() => { setMenuOpen(false); setView("profile"); }}
+                  >
+                    <Settings size={16} /> Settings
+                  </button>
+                  <div style={{ borderTop: "1px solid var(--border)", margin: "0.25rem 0" }} />
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      setMenuOpen(false);
+                      await logout();
+                      setUser(null);
+                    }}
+                  >
+                    <LogOut size={16} /> Log out
+                  </button>
+                </div>
+              </>
+            )}
+          </span>
         </span>
       </nav>
 
       <main style={{ maxWidth: 1100, margin: "0 auto", padding: "1rem" }}>
-        {Page ? (
+        {view === "profile" ? (
+          <ProfilePage
+            user={user}
+            onDone={() => setView(null)}
+            onSaved={loadSession}
+          />
+        ) : Page ? (
           <Page
             user={user}
             taskTarget={taskTarget}

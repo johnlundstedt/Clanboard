@@ -4,6 +4,21 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#2563eb" />
+    <script>
+      // Paint the stored theme before first paint. Without this the app renders
+      // one light frame while /api/auth/me is in flight, which is very visible on
+      // a dark-mode wall display. Duplicates the tiny bit of theme.js that has
+      // to run here; keep the two in step.
+      try {
+        var t = localStorage.getItem("clanboard.theme");
+        if (t !== "light" && t !== "dark") t = null;
+        var dark = t
+          ? t === "dark"
+          : matchMedia("(prefers-color-scheme: dark)").matches;
+        document.documentElement.dataset.theme = dark ? "dark" : "light";
+        document.documentElement.style.colorScheme = dark ? "dark" : "light";
+      } catch (e) {}
+    </script>
     <link rel="icon" type="image/png" href="/clan_board_logo_192x192.png" />
     <link rel="apple-touch-icon" href="/clan_board_logo_192x192.png" />
     <title>Clanboard</title>

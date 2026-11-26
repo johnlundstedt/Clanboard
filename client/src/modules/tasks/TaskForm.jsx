@@ -316,7 +316,7 @@ export default function TaskForm({ members, initial, defaultAssigneeIds, onSubmi
               checked={requiresAdultReview}
               onChange={(e) => setRequiresAdultReview(e.target.checked)}
             />
-            Needs adult review
+            Needs review
           </label>
 
           {settings?.enable_categories && (

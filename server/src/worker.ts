@@ -22,7 +22,7 @@
 
 import { Hono } from "hono";
 import { drizzle as drizzleFromD1 } from "drizzle-orm/d1";
-import type { D1Database, R2Bucket, ScheduledController } from "@cloudflare/workers-types";
+import type { D1Database, R2Bucket, ScheduledController, Fetcher } from "@cloudflare/workers-types";
 import {
   applyMigrationStatements,
   migrationStatementsFromText,
@@ -32,6 +32,7 @@ import { D1_SCHEMA } from "./db/d1-schema.js";
 import { initStorage, storage } from "./web/storage.js";
 import { createR2Storage } from "./core/storage-r2.js";
 import { createSecurity, toAuthRow } from "./web/helpers.js";
+import { hasValidSession } from "./web/landing.js";
 import { initSecurity } from "./web/security.js";
 import { changeLog } from "./core/changes.js";
 import { initContainerDb, containerDb } from "./core/container-db.js";
@@ -57,6 +58,8 @@ import adminModule from "./modules/admin/index.js";
 export interface Env {
   CLANBOARD: D1Database;
   UPLOADS: R2Bucket;
+  // Static assets (client/dist); wrangler.toml [assets] binding.
+  ASSETS: Fetcher;
   SESSION_SECRET: string;
   ADMIN_NAME?: string;
   ADMIN_PASSWORD?: string;
@@ -283,6 +286,16 @@ async function ensureApp(env: Env): Promise<void> {
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
+    // "/" runs the Worker first (wrangler.toml run_worker_first): signed-out
+    // visitors get the marketing homepage; signed-in ones fall through to the
+    // app shell. Checked before ensureApp so the homepage never waits on boot.
+    // ASSETS.fetch bypasses run_worker_first, so "/" here is the app's
+    // index.html; "/home" is home.html (asset html_handling drops ".html").
+    const url = new URL(request.url);
+    if (url.pathname === "/" && (request.method === "GET" || request.method === "HEAD")) {
+      const target = (await hasValidSession(request.headers.get("Cookie"), env.SESSION_SECRET)) ? "/" : "/home";
+      return env.ASSETS.fetch(new URL(target, url).toString()) as unknown as Response;
+    }
     await ensureApp(env);
     return app!.fetch(request, env);
   },

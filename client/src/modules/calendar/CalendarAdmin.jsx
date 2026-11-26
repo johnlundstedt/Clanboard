@@ -71,7 +71,7 @@ export default function CalendarAdmin({ onSaved }) {
               <span
                 className="badge"
                 title={c.calendar_id}
-                style={{ background: c.color || "#eef2ff", color: "#1e293b" }}
+                style={{ background: c.color || "var(--accent-soft)", color: c.color ? "#fff" : "var(--accent-text)" }}
               >
                 {c.label || c.calendar_id}
               </span>
@@ -90,14 +90,14 @@ export default function CalendarAdmin({ onSaved }) {
 function CalendarStatus({ conn }) {
   if (!conn.enabled) {
     return (
-      <span className="badge" title="Disabled — not synced" style={{ background: "#e2e8f0", color: "#475569" }}>
+      <span className="badge" title="Disabled — not synced" style={{ background: "var(--border)", color: "var(--muted)" }}>
         off
       </span>
     );
   }
   if (conn.last_sync_error) {
     return (
-      <span className="badge" title={conn.last_sync_error} style={{ background: "#fee2e2", color: "#b91c1c" }}>
+      <span className="badge" title={conn.last_sync_error} style={{ background: "var(--badge-red-bg)", color: "var(--badge-red-fg)" }}>
         ⚠ sync error
       </span>
     );
@@ -174,7 +174,7 @@ function CalendarForm({ initial, onCancel, onSaved }) {
         <span className="small muted">While off, this calendar is not synced and its events are hidden from the Calendar view.</span>
       )}
 
-      {error && <span className="small" style={{ color: "#b91c1c" }}>{error}</span>}
+      {error && <span className="small" style={{ color: "var(--red)" }}>{error}</span>}
 
       <div className="row">
         <button className="primary" type="submit">{initial ? "Save" : "Add calendar"}</button>

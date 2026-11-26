@@ -3,6 +3,8 @@ import * as core from "../../core/auth.js";
 import * as email from "../../core/email.js";
 import { containerDb } from "../../core/container-db.js";
 import { security } from "../../web/security.js";
+import { storage } from "../../web/storage.js";
+import { parsePhotoDataUrl, photoKey } from "../../core/storage.js";
 import { readJson, respond } from "../../web/helpers.js";
 
 async function migrate(db) {
@@ -45,6 +47,42 @@ app.post("/logout", (c) => {
   security().clearSession(c);
   return c.json({ ok: true });
 });
+
+// --- Self-service profile ----------------------------------------------------
+// The header's avatar menu lets a signed-in member change their own photo and
+// theme. This is the only non-admin write path onto a user row, so it accepts
+// exactly two fields (see core.updateOwnProfile) — role, admin flag and login
+// settings stay admin-only, whatever the request body claims.
+app.patch("/profile", (c) =>
+  respond(c, async () => {
+    const session = await security().currentSession(c);
+    if (!session) throw Object.assign(new Error("Not authenticated"), { status: 401 });
+    const user = await security().userById(session.userId);
+    if (!user) throw Object.assign(new Error("Not authenticated"), { status: 401 });
+    const body = await readJson(c);
+    await core.updateOwnProfile(containerDb, user.id, body);
+    // Return the full payload so the client refreshes name/modules/caps in the
+    // same round trip instead of re-fetching /me.
+    const fresh = await security().userById(session.userId);
+    return core.getMePayload(containerDb, fresh);
+  })
+);
+
+// Upload the signed-in member's own photo. Mirrors the admin photo route, which
+// is admin-guarded and so unreachable from here.
+app.post("/profile/photo", (c) =>
+  respond(c, async () => {
+    const session = await security().currentSession(c);
+    if (!session) throw Object.assign(new Error("Not authenticated"), { status: 401 });
+    const user = await security().userById(session.userId);
+    if (!user) throw Object.assign(new Error("Not authenticated"), { status: 401 });
+    const body = await readJson(c);
+    const photo = parsePhotoDataUrl(body.data);
+    const key = photoKey(user.name, photo.ext);
+    await storage().put(key, photo.bytes, photo.mime);
+    return { photo_url: `/uploads/${key}` };
+  }, { status: 201 })
+);
 
 // Ask by name + email for a password reset. Emails a fresh temporary password;
 // answers uniformly so nobody can enumerate accounts. A confirmed match also

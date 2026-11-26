@@ -24,6 +24,7 @@ export function toAuthRow(r: Record<string, unknown> | undefined | null): AuthUs
     gender: (r.gender as string) ?? null,
     role_id: (r.roleId as number | null) ?? null,
     nav_scope: (r.navScope as string) ?? "all",
+    theme: (r.theme as string) ?? "system",
     is_admin: r.isAdmin as boolean | number,
     is_kiosk: r.isKiosk as boolean | number,
     system_account: r.systemAccount as boolean | number,

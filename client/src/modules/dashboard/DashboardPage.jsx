@@ -59,7 +59,7 @@ function groupByDay(events) {
 function EventRow({ e }) {
   return (
     <div className="cal-sched-evt">
-      <span className="dot" style={{ background: e.color || "#3b82f6" }} />
+      <span className="dot" style={{ background: e.color || "var(--accent)" }} />
       <span className="time">{e.all_day ? "All-day" : e.local_time || (e.start_at || "").slice(11, 16)}</span>
       <span className="grow">
         {e.summary}

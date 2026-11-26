@@ -3,7 +3,7 @@ import bcrypt from "bcryptjs";
 import type { DbClient } from "./db.js";
 import { getSetting } from "./db.js";
 import { modules, roleModules, users } from "../schema.js";
-import { badRequest, unauthorized } from "./errors.js";
+import { badRequest, notFound, unauthorized } from "./errors.js";
 import { HttpError } from "./errors.js";
 import { memberCapabilities, type LoggedInUser } from "./caps.js";
 import { memberModuleOverrides } from "./members.js";
@@ -22,6 +22,7 @@ export interface AuthUserRow {
   gender?: string | null;
   role_id?: number | null;
   nav_scope?: string;
+  theme?: string;
   is_admin?: boolean | number;
   is_kiosk?: boolean | number;
   system_account?: boolean | number;
@@ -41,6 +42,7 @@ export interface PublicUser {
   gender: string | null;
   role_id: number | null;
   nav_scope: string;
+  theme: string;
   is_admin: boolean;
   is_kiosk: boolean;
   system_account: boolean;
@@ -49,6 +51,15 @@ export interface PublicUser {
   failed_attempts: number;
   locked: boolean;
   must_change_password: boolean;
+}
+
+// The themes a member can pick. Anything unrecognized (an older row written
+// before the column existed, or a hand-edited value) falls back to "system" so
+// the client always gets a theme it knows how to render.
+export const THEMES = ["system", "light", "dark"] as const;
+
+export function normalizeTheme(value: unknown): string {
+  return THEMES.includes(value as (typeof THEMES)[number]) ? String(value) : "system";
 }
 
 // Public, navigable view of a user (no password_hash, no created_at).
@@ -62,6 +73,7 @@ export function publicUser(u: AuthUserRow | null | undefined): PublicUser | null
     gender: u.gender ?? null,
     role_id: u.role_id ?? null,
     nav_scope: u.nav_scope ?? "all",
+    theme: normalizeTheme(u.theme),
     is_admin: !!u.is_admin,
     is_kiosk: !!u.is_kiosk,
     system_account: !!u.system_account,
@@ -279,6 +291,52 @@ export interface MePayload extends PublicUser {
 }
 
 // The /me payload: public user plus household context.
+// What a member may change about their OWN account. Deliberately narrower than
+// the admin MemberBody: no role, no admin flag, no account type, no login
+// fields. Anything outside this list in the request body is ignored rather than
+// rejected, so the endpoint can't be used to probe for writable fields.
+export interface OwnProfileBody {
+  theme?: string;
+  photo_url?: string | null;
+}
+
+export async function updateOwnProfile(db: DbClient, id: number, body: OwnProfileBody) {
+  const existing = await db.select().from(users).where(eq(users.id, id)).get();
+  if (!existing) throw notFound("Not found");
+
+  await db
+    .update(users)
+    .set({
+      theme: body.theme !== undefined ? normalizeTheme(body.theme) : existing.theme,
+      photoUrl:
+        body.photo_url !== undefined ? body.photo_url || null : existing.photoUrl,
+    })
+    .where(eq(users.id, id))
+    .run();
+
+  const updated = await db.select().from(users).where(eq(users.id, id)).get();
+  if (!updated) throw notFound("Not found");
+  return publicUser({
+    id: updated.id,
+    name: updated.name,
+    photo_url: updated.photoUrl,
+    birthday: updated.birthday,
+    gender: updated.gender,
+    role_id: updated.roleId,
+    nav_scope: updated.navScope,
+    theme: updated.theme,
+    is_admin: updated.isAdmin,
+    is_kiosk: updated.isKiosk,
+    system_account: updated.systemAccount,
+    password_hash: updated.passwordHash,
+    email: updated.email,
+    login_enabled: updated.loginEnabled,
+    failed_attempts: updated.failedAttempts,
+    locked: updated.locked,
+    must_change_password: updated.mustChangePassword,
+  });
+}
+
 export async function getMePayload(db: DbClient, user: AuthUserRow): Promise<MePayload> {
   const [enabled_modules, caps] = await Promise.all([
     memberEnabledModules(db, user),

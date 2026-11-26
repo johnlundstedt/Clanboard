@@ -18,6 +18,7 @@ db.exec(`
     gender TEXT,                       -- 'male' | 'female' | 'nonbinary' | null
     role_id INTEGER REFERENCES member_roles(id) ON DELETE SET NULL,
     nav_scope TEXT NOT NULL DEFAULT 'all',  -- 'own' (just that member's dashboard/tasks) | 'all'
+    theme TEXT NOT NULL DEFAULT 'system',   -- 'system' (follow the device) | 'light' | 'dark'
     is_admin INTEGER NOT NULL DEFAULT 0,
     is_kiosk INTEGER NOT NULL DEFAULT 0, -- wall-display account
     system_account INTEGER NOT NULL DEFAULT 0, -- system-only account (hidden from kiosk and pickers)
@@ -102,6 +103,9 @@ if (!userCols.includes("locked")) {
 }
 if (!userCols.includes("must_change_password")) {
   db.exec("ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0");
+}
+if (!userCols.includes("theme")) {
+  db.exec("ALTER TABLE users ADD COLUMN theme TEXT NOT NULL DEFAULT 'system'");
 }
 
 // Re-run migrations after the columns exist so any newly created tables above

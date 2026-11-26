@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /uploads/
+Disallow: /login
+
+Sitemap: https://www.clanboard.app/sitemap.xml

@@ -1,16 +1,78 @@
+/* Every colour in the app comes from these tokens — the dark block below is the
+   only place a raw hex appears, so re-theming never means touching a selector. */
 :root {
+  color-scheme: light;
   --bg: #f4f6f8;
+  --bg-soft: #f1f5f9;
   --surface: #ffffff;
+  --surface-2: #f8fafc;
   --text: #1f2430;
   --muted: #6b7280;
+  /* Placeholder/hint text: a step lighter than --muted so an empty field's
+     suggestion never reads as saved content. */
+  --hint: #8e99a8;
   --accent: #3b82f6;
   --accent-dark: #2563eb;
+  --accent-soft: #eff6ff;
+  --accent-text: #1e40af;
   --green: #16a34a;
   --amber: #d97706;
   --red: #dc2626;
+  --red-soft: #fef2f2;
   --border: #e2e8f0;
+  --border-strong: #cbd5e1;
+  --track: #eef2f7;
+  --scrim: rgba(0, 0, 0, 0.55);
   --radius: 12px;
   --shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  --shadow-pop: 0 4px 12px rgba(0, 0, 0, 0.12);
+  --badge-indigo-bg: #eef2ff;
+  --badge-indigo-fg: #4338ca;
+  --badge-green-bg: #dcfce7;
+  --badge-green-fg: #166534;
+  --badge-amber-bg: #fef3c7;
+  --badge-amber-fg: #92400e;
+  --badge-red-bg: #fee2e2;
+  --badge-red-fg: #991b1b;
+  --on-accent: #ffffff;
+}
+
+/* Dark theme. data-theme is set to a concrete light/dark by theme.js, so this
+   never has to reason about prefers-color-scheme itself. */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #12151b;
+  --bg-soft: #1c212a;
+  --surface: #1a1f27;
+  --surface-2: #20262f;
+  --text: #e7ebf0;
+  --muted: #98a2b3;
+  --hint: #6f7a8c;
+  /* Slightly lighter, less saturated accents: the light-theme blues sit too
+     close to the dark background to carry white text. */
+  --accent: #4d8ff0;
+  --accent-dark: #6ea3f5;
+  --accent-soft: #1b2a41;
+  --accent-text: #9dc4f8;
+  --green: #34c17b;
+  --amber: #e0a33a;
+  --red: #e5645f;
+  --red-soft: #34191a;
+  --border: #2c333f;
+  --border-strong: #47515f;
+  --track: #262d38;
+  --scrim: rgba(0, 0, 0, 0.65);
+  --shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+  --shadow-pop: 0 4px 12px rgba(0, 0, 0, 0.6);
+  --badge-indigo-bg: #262a4a;
+  --badge-indigo-fg: #b9c0f0;
+  --badge-green-bg: #16301f;
+  --badge-green-fg: #7fd6a2;
+  --badge-amber-bg: #33270e;
+  --badge-amber-fg: #ecc06a;
+  --badge-red-bg: #3a1c1c;
+  --badge-red-fg: #f0a09c;
+  --on-accent: #0d1117;
 }
 
 * { box-sizing: border-box; }
@@ -36,15 +98,15 @@ button {
   padding: 0.45rem 0.9rem;
   transition: background 0.12s ease, border-color 0.12s ease;
 }
-button:hover { background: #f1f5f9; }
+button:hover { background: var(--bg-soft); }
 button.primary {
   background: var(--accent);
   border-color: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
 }
 button.primary:hover { background: var(--accent-dark); }
-button.danger { color: var(--red); border-color: #fecaca; }
-button.danger:hover { background: #fef2f2; }
+button.danger { color: var(--red); border-color: var(--border); }
+button.danger:hover { background: var(--red-soft); }
 button:disabled { opacity: 0.5; cursor: not-allowed; }
 
 input, select, textarea {
@@ -52,7 +114,7 @@ input, select, textarea {
   padding: 0.45rem 0.6rem;
   border: 1px solid var(--border);
   border-radius: 8px;
-  background: #fff;
+  background: var(--surface);
   color: var(--text);
 }
 input:focus, select:focus, textarea:focus {
@@ -92,7 +154,7 @@ input:focus, select:focus, textarea:focus {
 .list-logo {
   border-radius: 4px;
   object-fit: contain;
-  background: #fff;
+  background: var(--surface);
   flex-shrink: 0;
 }
 
@@ -120,7 +182,7 @@ input:focus, select:focus, textarea:focus {
   object-fit: cover;
   flex-shrink: 0;
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -135,12 +197,12 @@ input:focus, select:focus, textarea:focus {
   border-radius: 999px;
   font-size: 0.75rem;
   font-weight: 600;
-  background: #eef2ff;
-  color: #4338ca;
+  background: var(--badge-indigo-bg);
+  color: var(--badge-indigo-fg);
 }
-.badge.green { background: #dcfce7; color: #166534; }
-.badge.amber { background: #fef3c7; color: #92400e; }
-.badge.red { background: #fee2e2; color: #991b1b; }
+.badge.green { background: var(--badge-green-bg); color: var(--badge-green-fg); }
+.badge.amber { background: var(--badge-amber-bg); color: var(--badge-amber-fg); }
+.badge.red { background: var(--badge-red-bg); color: var(--badge-red-fg); }
 
 /* Member avatar filter in the Tasks view */
 .member-pick {
@@ -156,8 +218,8 @@ input:focus, select:focus, textarea:focus {
   min-width: 60px;
 }
 .member-pick .avatar { width: 44px; height: 44px; font-size: 1rem; }
-.member-pick:hover { background: var(--bg-soft, #f3f4f6); }
-.member-pick.active { border-color: var(--accent); background: #eff6ff; }
+.member-pick:hover { background: var(--bg-soft); }
+.member-pick.active { border-color: var(--accent); background: var(--accent-soft); }
 .member-pick .member-name { font-size: 0.72rem; color: var(--muted); }
 
 /* Task list view toggle: Today / Upcoming / All */
@@ -166,7 +228,7 @@ input:focus, select:focus, textarea:focus {
   gap: 2px;
   padding: 2px;
   border-radius: 8px;
-  background: var(--bg-soft, #f3f4f6);
+  background: var(--bg-soft);
 }
 .view-toggle button {
   border: 1px solid transparent;
@@ -180,10 +242,10 @@ input:focus, select:focus, textarea:focus {
 }
 .view-toggle button:hover { color: var(--text); }
 .view-toggle button.active {
-  background: #fff;
+  background: var(--surface);
   border-color: var(--accent);
   color: var(--text);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+  box-shadow: var(--shadow);
 }
 
 /* Count / done badge overlaid on the avatar's bottom-right corner */
@@ -205,13 +267,13 @@ input:focus, select:focus, textarea:focus {
   font-size: 0.62rem;
   font-weight: 700;
   line-height: 1;
-  background: var(--red, #ef4444);
-  color: #fff;
-  box-shadow: 0 0 0 2px var(--surface, #fff);
+  background: var(--red);
+  color: var(--on-accent);
+  box-shadow: 0 0 0 2px var(--surface);
 }
 .avatar-badge.green {
-  background: #16a34a;
-  color: #fff;
+  background: var(--green);
+  color: var(--on-accent);
   min-width: 20px;
   height: 20px;
   font-size: 0.72rem;
@@ -304,10 +366,10 @@ input:focus, select:focus, textarea:focus {
   border-radius: 2px;
   background: var(--accent);
 }
-.nav button.navlink:hover { background: #f1f5f9; }
+.nav button.navlink:hover { background: var(--bg-soft); }
 .nav button.navlink.active {
-  background: #eff6ff;
-  color: var(--accent-dark);
+  background: var(--accent-soft);
+  color: var(--accent-text);
 }
 .nav .nav-badge {
   position: absolute;
@@ -320,8 +382,8 @@ input:focus, select:focus, textarea:focus {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: var(--red, #ef4444);
-  color: #fff;
+  background: var(--red);
+  color: var(--on-accent);
   font-size: 0.72rem;
   font-weight: 700;
   pointer-events: none;
@@ -363,18 +425,18 @@ input:focus, select:focus, textarea:focus {
   width: 100%;
 }
 .kiosk-family:hover,
-.kiosk-member:hover { background: #f1f5f9; }
+.kiosk-member:hover { background: var(--bg-soft); }
 .kiosk-family.active,
 .kiosk-member.active {
   /* Strong high-contrast selection so the current picker is obvious at a glance */
   background: var(--accent);
-  color: #fff;
-  box-shadow: 0 2px 10px rgba(37, 99, 235, 0.4);
+  color: var(--on-accent);
+  box-shadow: 0 2px 10px rgba(37, 99, 235, 0.35);
 }
 .kiosk-family.active .kiosk-name,
-.kiosk-member.active .kiosk-name { color: #fff; }
-.kiosk-member.active .avatar { outline: 2px solid #fff; outline-offset: 2px; }
-.kiosk-family.active .avatar { background: #fff; color: var(--accent); }
+.kiosk-member.active .kiosk-name { color: var(--on-accent); }
+.kiosk-member.active .avatar { outline: 2px solid var(--on-accent); outline-offset: 2px; }
+.kiosk-family.active .avatar { background: var(--surface); color: var(--accent); }
 .kiosk-avatar { width: 44px; height: 44px; }
 .kiosk-name {
   font-size: 0.72rem;
@@ -405,9 +467,9 @@ input:focus, select:focus, textarea:focus {
   max-width: 320px;
 }
 .login-brand h1 { margin: 0 0 0; font-size: 4rem; line-height: 1; font-weight: 800; white-space: nowrap; }
-.login-brand h1 .clan { color: #173b68; }
+.login-brand h1 .clan { color: var(--accent-text); }
 .login-brand h1 .board { color: var(--accent); }
-.clan { color: #173b68; }
+.clan { color: var(--accent-text); }
 .board { color: var(--accent); }
 .login-brand .login-tagline { margin: 0.25rem 0 0; color: var(--muted); font-size: 1.35rem; }
 .login-card { width: 100%; max-width: 360px; }
@@ -490,16 +552,44 @@ input:focus, select:focus, textarea:focus {
   grid-column: 2 / -1;
 }
 .child-progress.clickable { cursor: pointer; }
-.child-progress.clickable:hover { background: var(--bg-soft, #f3f4f6); }
+.child-progress.clickable:hover { background: var(--bg-soft); }
 @media (hover: none) {
   .child-progress.clickable:hover { background: none; }
 }
 
 .row.clickable { cursor: pointer; }
-.row.clickable:hover { background: var(--bg-soft, #f3f4f6); }
+.row.clickable:hover { background: var(--bg-soft); }
 @media (hover: none) {
   .row.clickable:hover { background: none; }
 }
+
+/* Header avatar menu: the avatar becomes the trigger, with a 44px hit target to
+   match the kiosk sidebar's touch-friendly avatar. */
+.nav-user { position: relative; display: inline-flex; }
+.nav-avatar-btn {
+  border: none;
+  background: none;
+  border-radius: 50%;
+  padding: 2px;
+  display: inline-flex;
+  cursor: pointer;
+}
+.nav-avatar-btn:hover { background: var(--bg-soft); }
+.nav-avatar-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* Anchored below the avatar, right-aligned to it. */
+.profile-menu {
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 175px;
+}
+.profile-menu button {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* Member's own settings */
+.profile-form { max-width: 560px; }
 
 /* Compact icon-only buttons (list headers, full-screen controls) */
 .icon-btn {
@@ -513,7 +603,7 @@ input:focus, select:focus, textarea:focus {
   color: var(--muted);
   cursor: pointer;
 }
-.icon-btn:hover { background: var(--bg-soft, #f3f4f6); color: var(--text); }
+.icon-btn:hover { background: var(--bg-soft); color: var(--text); }
 .icon-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 /* Dropdown menu popover anchored to a list header's options button */
@@ -524,7 +614,7 @@ input:focus, select:focus, textarea:focus {
   z-index: 41;
   min-width: 150px;
   padding: 0.4rem;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+  box-shadow: var(--shadow-pop);
 }
 .list-menu button {
   width: 100%;
@@ -535,8 +625,8 @@ input:focus, select:focus, textarea:focus {
   border-radius: 6px;
   cursor: pointer;
 }
-.list-menu button:hover { background: var(--bg-soft, #f3f4f6); }
-.list-menu button.danger:hover { background: #fef2f2; }
+.list-menu button:hover { background: var(--bg-soft); }
+.list-menu button.danger:hover { background: var(--red-soft); }
 
 /* Item-options menu: slate of target lists can grow tall, so cap + scroll it */
 .item-menu { max-height: 60vh; overflow-y: auto; min-width: 180px; }
@@ -579,7 +669,7 @@ input:focus, select:focus, textarea:focus {
   justify-content: center;
   border-radius: 6px;
 }
-.title-bar-refresh:hover { background: var(--bg-soft, #f3f4f6); color: var(--text); }
+.title-bar-refresh:hover { background: var(--bg-soft); color: var(--text); }
 @keyframes titlebar-spin { to { transform: rotate(360deg); } }
 .title-bar-refresh .spin { animation: titlebar-spin 0.6s linear; }
 .login-wrap { padding-top: env(titlebar-area-height, 1rem); }
@@ -587,7 +677,7 @@ input:focus, select:focus, textarea:focus {
 .progress-track {
   height: 10px;
   border-radius: 999px;
-  background: #eef2f7;
+  background: var(--track);
   overflow: hidden;
 }
 .progress-fill {
@@ -610,11 +700,15 @@ input:focus, select:focus, textarea:focus {
 .meal-grid {
   display: grid;
   grid-template-rows: 30px repeat(4, auto);
-  grid-auto-columns: 92px repeat(7, 1fr);
   grid-auto-flow: row;
-  grid-template-columns: 92px repeat(7, 1fr);
+  /* Each day column is at least 110px, so the grid still overflows (and
+     scrolls) on a phone. But it no longer *demands* a fixed 1180px: a
+     min-width wider than the page's content box made every day column overflow
+     on a laptop too, so the last days were only reachable by scrolling even
+     with the whole week practically empty. The 1fr lets the day columns share
+     whatever width is actually available. */
+  grid-template-columns: 92px repeat(7, minmax(110px, 1fr));
   gap: 0.5rem;
-  min-width: 1180px;
 }
 /* Left-hand column (meal labels) stays put while the day columns scroll;
    painted with the page background so rows slide underneath. The top-left
@@ -640,7 +734,7 @@ input:focus, select:focus, textarea:focus {
   font-style: normal;
   font-size: 0.65rem;
   font-weight: 600;
-  color: #fff;
+  color: var(--on-accent);
   background: var(--green);
   border-radius: 999px;
   padding: 1px 6px;
@@ -669,6 +763,15 @@ input:focus, select:focus, textarea:focus {
   height: auto;
   min-height: 88px;
 }
+/* The meal suggestions ("Pancakes?", "Sandwiches?") read like real entries at
+   the browser's default placeholder gray. Italic is the strongest cue that the
+   text isn't part of the meal, and the lighter --hint color keeps the contrast
+   with the background while staying clearly below the typed text. */
+.meal-slot textarea::placeholder {
+  color: var(--hint);
+  font-style: italic;
+  opacity: 1;
+}
 
 /* Calendar */
 .cal-day { border: 1px solid var(--border); border-radius: 8px; padding: 0.5rem; min-height: 90px; }
@@ -677,8 +780,8 @@ input:focus, select:focus, textarea:focus {
   border-radius: 6px;
   font-size: 0.78rem;
   margin: 3px 0;
-  background: #eff6ff;
-  color: #1e40af;
+  background: var(--accent-soft);
+  color: var(--accent-text);
   overflow: hidden;
 }
 .cal-schedule { display: grid; gap: 0.75rem; }
@@ -686,3 +789,117 @@ input:focus, select:focus, textarea:focus {
 .cal-sched-evt { display: flex; align-items: center; gap: 0.5rem; padding: 0.2rem 0; min-width: 0; }
 .cal-sched-evt .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
 .cal-sched-evt .time { font-size: 0.8rem; color: var(--muted); white-space: nowrap; min-width: 3.2rem; }
+
+/* Entry forms (member, and anything else wanting the same shape): labeled
+   sections in one column on phones, two on desktop — identity over role on the
+   left, sign-in alone on the right. */
+.member-form { display: grid; gap: 0.75rem; }
+
+.form-grid {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+}
+@media (min-width: 900px) {
+  .form-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  /* Identity + Role stack in the left column; Sign-in sits alone on the right. */
+  .form-section.form-role { grid-column: 1; grid-row: 2; }
+  .form-section.form-signin { grid-column: 2; grid-row: 1; }
+}
+
+.form-section {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.7rem 0.8rem;
+  display: grid;
+  gap: 0.6rem;
+  min-width: 0;
+}
+
+/* Section headings read as dividers ("── Role ──"), not as content. */
+.form-legend {
+  margin: 0;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* Every control carries a visible label: placeholders vanish as soon as the
+   PWA has something typed into the field. */
+.form-field { display: grid; gap: 0.25rem; min-width: 0; }
+.form-field > label:not(.switch) { font-size: 0.8rem; font-weight: 600; color: var(--muted); }
+.form-field input,
+.form-field select,
+.form-field .field { width: 100%; }
+.form-hint { font-size: 0.78rem; color: var(--muted); }
+
+/* Identity: the photo sits at the left of the name and birthday fields. */
+.identity-row { display: flex; align-items: flex-start; gap: 0.8rem; }
+.identity-fields { display: grid; gap: 0.55rem; flex: 1; min-width: 0; }
+.identity-photo { position: relative; display: grid; justify-items: center; gap: 0.3rem; }
+.identity-photo .avatar { width: 72px; height: 72px; font-size: 1.5rem; }
+.identity-photo > button { display: inline-flex; align-items: center; gap: 0.2rem; padding: 0.3rem 0.5rem; }
+/* Photo menu hangs below the avatar instead of off to its right. */
+.photo-menu { top: calc(100% + 4px); left: 0; right: auto; min-width: 175px; }
+.photo-menu button { display: flex; align-items: center; gap: 0.5rem; }
+
+/* Toggle switch: bigger hit target than a checkbox, and reads as on/off at a
+   glance on a touch screen. */
+.switch { display: inline-flex; align-items: center; gap: 0.55rem; cursor: pointer; user-select: none; }
+.switch input { position: absolute; opacity: 0; width: 0; height: 0; }
+.switch-track {
+  position: relative;
+  width: 44px;
+  height: 26px;
+  border-radius: 999px;
+  background: var(--border-strong);
+  transition: background 0.15s ease;
+  flex-shrink: 0;
+}
+.switch-thumb {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+  transition: transform 0.15s ease;
+}
+.switch input:checked + .switch-track { background: var(--accent); }
+.switch input:checked + .switch-track .switch-thumb { transform: translateX(18px); }
+.switch input:focus-visible + .switch-track { outline: 2px solid var(--accent); outline-offset: 2px; }
+.switch-label { font-weight: 600; }
+
+/* Collapsed "Advanced" section holding the account-type choice */
+.advanced {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.55rem 0.8rem;
+}
+.advanced > summary {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  cursor: pointer;
+  list-style: none;
+}
+.advanced > summary::-webkit-details-marker { display: none; }
+.advanced > summary::before {
+  content: "▸";
+  color: var(--muted);
+  font-size: 0.8rem;
+  transition: transform 0.15s ease;
+}
+.advanced[open] > summary::before { transform: rotate(90deg); }
+.advanced-body { display: grid; gap: 0.55rem; padding-top: 0.65rem; max-width: 24rem; }
+
+/* Footer: destructive action kept well away from the right-aligned Save/Cancel. */
+.form-actions { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+.form-actions .spacer { flex: 1; }

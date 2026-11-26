@@ -34,6 +34,7 @@ export const users = sqliteTable("users", {
     onDelete: "set null",
   }),
   navScope: text("nav_scope").notNull().default("all"),
+  theme: text("theme").notNull().default("system"), // 'system' | 'light' | 'dark'
   isAdmin: integer("is_admin", { mode: "boolean" }).notNull().default(false),
   isKiosk: integer("is_kiosk", { mode: "boolean" }).notNull().default(false),
   systemAccount: integer("system_account", { mode: "boolean" })

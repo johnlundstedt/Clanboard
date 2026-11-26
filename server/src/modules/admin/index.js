@@ -7,10 +7,16 @@ import { storage } from "../../web/storage.js";
 import { numParam, readJson, respond } from "../../web/helpers.js";
 import * as core from "../../core/admin.js";
 
-function migrate() {
-  core.seedDefaultRoles(containerDb).catch((err) => {
-    console.error("[admin] seeding default roles failed:", err);
-  });
+async function migrate() {
+  try {
+    // Databases seeded before the singular rename still carry the plural name;
+    // renaming in place keeps every member's role assignment. A fresh database
+    // gets "Parent" straight from the seed, and both calls are no-ops after that.
+    await core.renameRole(containerDb, "Parents", "Parent");
+    await core.seedDefaultRoles(containerDb);
+  } catch (err) {
+    console.error("[admin] role migration failed:", err);
+  }
 }
 
 const app = new Hono();

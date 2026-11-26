@@ -3,7 +3,7 @@ import type { DbClient } from "./db.js";
 import { getSetting, setSetting } from "./db.js";
 import { membersRoles, modules, roleModules, taskAssignees, userModules, users } from "../schema.js";
 import { badRequest, notFound } from "./errors.js";
-import { publicUser, hashPassword, validateNewPassword, generateTemporaryPassword, resetPassword, type AuthUserRow } from "./auth.js";
+import { publicUser, hashPassword, validateNewPassword, generateTemporaryPassword, normalizeTheme, resetPassword, type AuthUserRow } from "./auth.js";
 import { emailConfigured, sendTemporaryPasswordEmail, sendWelcomeEmail } from "./email.js";
 import { ROLE_CAPABILITIES } from "./role-caps.js";
 import {
@@ -13,7 +13,7 @@ import {
   type RoleWire,
 } from "./members.js";
 
-export { getRole, roleWithGrants } from "./members.js";
+export { getRole, listRoleGrants, roleWithGrants } from "./members.js";
 
 // Modules a role can toggle + configure capabilities for (Home/Admin are locked).
 const ROLE_MODULES = ["tasks", "lists", "meal-plan", "calendar"];
@@ -67,7 +67,7 @@ export function roleCapabilities() {
 // capability names from ROLE_CAPABILITIES; true grants, false denies. Modules
 // not listed for a role stay off (the role matrix gates access entirely).
 const DEFAULT_ROLES: Record<string, Record<string, Record<string, boolean>>> = {
-  Parents: {
+  Parent: {
     tasks: { view_others: true, create: true, create_unassigned: true, assign_self: true, assign_others: true, volunteer: true, reassign: true, edit: true, delete: true, update_deadline: true, complete_own: true, complete_others: true, review: true },
     "meal-plan": { edit: true },
     lists: { create_lists: true, delete_lists: true, add_items: true, remove_items: true, complete_items: true },
@@ -123,6 +123,25 @@ export async function seedDefaultRoles(db: DbClient) {
         .run();
     }
   }
+}
+
+// Rename a role in place, keeping its id: every member assigned to it, and
+// every capability grant, follows the rename untouched. A no-op unless the old
+// name is there and the new one is free, so it is safe to run at every boot.
+export async function renameRole(db: DbClient, from: string, to: string) {
+  const taken = await db
+    .select({ id: membersRoles.id })
+    .from(membersRoles)
+    .where(eq(membersRoles.name, to))
+    .get();
+  if (taken) return;
+  const old = await db
+    .select({ id: membersRoles.id })
+    .from(membersRoles)
+    .where(eq(membersRoles.name, from))
+    .get();
+  if (!old) return;
+  await db.update(membersRoles).set({ name: to }).where(eq(membersRoles.id, old.id)).run();
 }
 
 interface ModuleBody {
@@ -287,6 +306,7 @@ function snakeUser(u: typeof users.$inferSelect): AuthUserRow {
     gender: u.gender,
     role_id: u.roleId,
     nav_scope: u.navScope,
+    theme: u.theme,
     is_admin: u.isAdmin,
     is_kiosk: u.isKiosk,
     system_account: u.systemAccount,
@@ -311,6 +331,7 @@ export interface MemberBody {
   gender?: string | null;
   role_id?: number | null;
   nav_scope?: string;
+  theme?: string;
   is_admin?: boolean;
   is_kiosk?: boolean;
   system_account?: boolean;
@@ -364,6 +385,7 @@ async function insertMember(
       gender: body.gender || null,
       roleId: body.role_id ? Number(body.role_id) : null,
       navScope: body.nav_scope || "all",
+      theme: normalizeTheme(body.theme),
       isAdmin: !!body.is_admin,
       isKiosk: !!body.is_kiosk,
       systemAccount: !!body.system_account,
@@ -402,7 +424,7 @@ export async function createMember(db: DbClient, body: MemberBody) {
 export async function updateMember(db: DbClient, id: number, body: MemberBody) {
   const existing = await db.select().from(users).where(eq(users.id, id)).get();
   if (!existing) throw notFound("Not found");
-  const { name, photo_url, birthday, gender, role_id, nav_scope, is_admin, is_kiosk, system_account, password, login_enabled } = body;
+  const { name, photo_url, birthday, gender, role_id, nav_scope, theme, is_admin, is_kiosk, system_account, password, login_enabled } = body;
 
   const email = await loginEmailFor(db, body, existing.email);
   const enablingLogin = login_enabled !== undefined ? !!login_enabled : !!existing.loginEnabled;
@@ -433,6 +455,7 @@ export async function updateMember(db: DbClient, id: number, body: MemberBody) {
       gender: gender !== undefined ? gender : existing.gender,
       roleId: role_id !== undefined ? (role_id ? Number(role_id) : null) : existing.roleId,
       navScope: nav_scope !== undefined ? nav_scope : existing.navScope,
+      theme: theme !== undefined ? normalizeTheme(theme) : existing.theme,
       isAdmin: is_admin !== undefined ? !!is_admin : existing.isAdmin,
       isKiosk: is_kiosk !== undefined ? !!is_kiosk : existing.isKiosk,
       systemAccount: system_account !== undefined ? !!system_account : existing.systemAccount,

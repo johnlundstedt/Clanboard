@@ -73,7 +73,7 @@ export function IconPicker({ value, onChange }) {
                       padding: "4px", border: "none", background: "transparent",
                       borderRadius: 6,
                       color: value === name ? "var(--accent)" : undefined,
-                      background: value === name ? "#eff6ff" : undefined,
+                      background: value === name ? "var(--accent-soft)" : undefined,
                     }}
                   >
                     <Icon size={18} />

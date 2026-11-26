@@ -27,7 +27,7 @@ const modules = [
     navLabel: "Tasks",
     page: TasksPage,
     icon: ListChecks,
-    desc: "Chores and tasks: due dates, assignments, adult review, and daily/weekly recurrence.",
+    desc: "Chores and tasks: due dates, assignments, review, and daily/weekly recurrence.",
   },
   {
     name: "lists",
